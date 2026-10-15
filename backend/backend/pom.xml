@@ -45,6 +45,13 @@
             <type>pom</type>
         </dependency>
 
+        <!-- Temporal Workflow SDK -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-sdk</artifactId>
+            <version>1.40.0</version>
+        </dependency>
+
         <!-- Spring Boot testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
