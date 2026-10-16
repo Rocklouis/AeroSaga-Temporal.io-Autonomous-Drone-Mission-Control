@@ -1,10 +1,10 @@
 
 import { useEffect, useRef, useState } from 'react'
+import Editor from '@monaco-editor/react'
 import {
   Cartesian3,
   Color,
   createWorldTerrainAsync,
-  Ion,
   Viewer,
   createOsmBuildingsAsync
 } from 'cesium'
@@ -17,11 +17,38 @@ const drones = [
   { id: 'DR-003', name: 'Drone Charlie', status: 'Returning', lat: 19.0760, lon: 72.8777, battery: 42 }
 ]
 
+const starterCode = {
+  java: `public class Main {
+    public static void main(String[] args) {
+        System.out.println("AeroSaga Mission Control");
+    }
+}`,
+  python: `def main():
+    print("AeroSaga Mission Control")
+
+if __name__ == "__main__":
+    main()`,
+  javascript: `function main() {
+    console.log("AeroSaga Mission Control");
+}
+
+main();`
+}
+
+const languages = [
+  { id: 'java', label: 'Java', extension: 'Main.java' },
+  { id: 'python', label: 'Python', extension: 'main.py' },
+  { id: 'javascript', label: 'JavaScript', extension: 'main.js' }
+]
+
 function App() {
   const globeRef = useRef(null)
   const viewerRef = useRef(null)
+
   const [selectedDrone, setSelectedDrone] = useState(null)
   const [globeError, setGlobeError] = useState('')
+  const [activeLanguage, setActiveLanguage] = useState('java')
+  const [codeByLanguage, setCodeByLanguage] = useState(starterCode)
 
   useEffect(() => {
     let cancelled = false
@@ -66,8 +93,7 @@ function App() {
               outlineColor: Color.BLACK,
               outlineWidth: 3,
               style: 2,
-              pixelOffset: new Cartesian3(0, -20, 0),
-              distanceDisplayCondition: undefined
+              pixelOffset: new Cartesian3(0, -20, 0)
             }
           })
         }
@@ -82,7 +108,7 @@ function App() {
             viewer.scene.primitives.add(buildings)
           }
         } catch {
-          // The globe and drone markers can work without 3D buildings.
+          // The globe and drone markers work without 3D buildings.
         }
       } catch (error) {
         console.error('Cesium initialization failed:', error)
@@ -111,6 +137,24 @@ function App() {
       destination: Cartesian3.fromDegrees(drone.lon, drone.lat, 450000)
     })
   }
+
+  function updateCode(value) {
+    setCodeByLanguage(previous => ({
+      ...previous,
+      [activeLanguage]: value ?? ''
+    }))
+  }
+
+  function resetCode() {
+    setCodeByLanguage(previous => ({
+      ...previous,
+      [activeLanguage]: starterCode[activeLanguage]
+    }))
+  }
+
+  const currentLanguage = languages.find(
+    language => language.id === activeLanguage
+  )
 
   return (
     <main className="dashboard">
@@ -171,8 +215,9 @@ function App() {
           </div>
 
           <div className="drone-list">
-            {drones.map((drone) => (
+            {drones.map(drone => (
               <button
+                type="button"
                 className={`drone-card ${selectedDrone?.id === drone.id ? 'selected' : ''}`}
                 key={drone.id}
                 onClick={() => focusDrone(drone)}
@@ -187,16 +232,19 @@ function App() {
                     {drone.status}
                   </span>
                 </div>
+
                 <div className="battery-row">
                   <span>Battery</span>
                   <strong>{drone.battery}%</strong>
                 </div>
+
                 <div className="battery-track">
                   <div
                     className="battery-fill"
                     style={{ width: `${drone.battery}%` }}
                   />
                 </div>
+
                 <div className="coordinates">
                   {drone.lat.toFixed(4)}° N, {drone.lon.toFixed(4)}° E
                 </div>
@@ -208,14 +256,86 @@ function App() {
             <span className="workflow-icon">↗</span>
             <div>
               <strong>Temporal workflows</strong>
-              <p>Workflow integration is the next backend milestone.</p>
+              <p>Simulated takeoff workflow implemented in the backend.</p>
             </div>
           </div>
         </aside>
       </section>
 
+      <section className="editor-panel">
+        <div className="panel-heading editor-heading">
+          <div>
+            <p className="eyebrow">DEVELOPMENT ENVIRONMENT</p>
+            <h2>Mission Code Workspace</h2>
+          </div>
+          <span className="demo-tag">EDITOR PREVIEW</span>
+        </div>
+
+        <div className="editor-toolbar">
+          <div className="language-tabs" role="tablist" aria-label="Programming language">
+            {languages.map(language => (
+              <button
+                key={language.id}
+                type="button"
+                role="tab"
+                aria-selected={activeLanguage === language.id}
+                className={`language-tab ${activeLanguage === language.id ? 'active' : ''}`}
+                onClick={() => setActiveLanguage(language.id)}
+              >
+                {language.label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="reset-button"
+            onClick={resetCode}
+          >
+            Reset code
+          </button>
+        </div>
+
+        <div className="editor-filebar">
+          <span className="file-indicator">●</span>
+          <span>{currentLanguage.extension}</span>
+          <span className="editor-status">Editable · Local preview</span>
+        </div>
+
+        <div className="monaco-container">
+          <Editor
+            height="360px"
+            language={activeLanguage}
+            theme="vs-dark"
+            path={currentLanguage.extension}
+            value={codeByLanguage[activeLanguage]}
+            onChange={updateCode}
+            options={{
+              fontSize: 14,
+              fontFamily: "'DM Mono', monospace",
+              minimap: { enabled: false },
+              automaticLayout: true,
+              scrollBeyondLastLine: false,
+              padding: { top: 16 },
+              tabSize: 4,
+              wordWrap: 'on',
+              lineNumbers: 'on',
+              renderLineHighlight: 'all',
+              roundedSelection: true,
+              bracketPairColorization: { enabled: true }
+            }}
+          />
+        </div>
+
+        <div className="editor-footer">
+          <span>{currentLanguage.label}</span>
+          <span>Code execution is not connected yet</span>
+        </div>
+      </section>
+
       <footer>
-        AEROSAGA / WEEK 1 PROTOTYPE <span>3D FLEET VISUALIZATION</span>
+        AEROSAGA / WEEK 1 PROTOTYPE
+        <span>3D FLEET VISUALIZATION + CODE EDITOR</span>
       </footer>
     </main>
   )

@@ -1,352 +1,132 @@
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
-
-:root {
-  font-family: 'Manrope', sans-serif;
-  color: #e8f0fa;
-  background: #08111f;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-button {
-  font: inherit;
-}
-
-.dashboard {
-  width: min(1600px, 100%);
-  margin: auto;
-  padding: 30px;
-}
-
-.topbar,
-.panel-heading,
-.drone-card-top,
-.battery-row,
-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-}
-
-.topbar {
-  padding-bottom: 28px;
-  border-bottom: 1px solid #223047;
-}
-
-.eyebrow,
-.connection,
-.demo-tag,
-.fleet-count,
-.drone-title span,
-.coordinates,
-.map-note,
-footer {
-  font-family: 'DM Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 1.3px;
-}
-
-.eyebrow {
-  color: #6e8aa8;
-  margin: 0 0 8px;
-}
-
-h1 {
-  font-size: clamp(23px, 3vw, 34px);
-  margin: 0;
-  letter-spacing: -1.4px;
-}
-
-h1 span {
-  color: #7c92aa;
-  font-weight: 500;
-}
-
-.connection {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #7fe3c0;
-}
-
-.live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #4cddb0;
-  box-shadow: 0 0 12px #4cddb077;
-}
-
-.summary {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  margin: 22px 0;
-}
-
-.summary-card,
-.map-panel,
-.fleet-panel {
+/* Monaco code workspace */
+.editor-panel {
+  margin-top: 20px;
+  padding: 20px;
+  min-width: 0;
   background: #101c2d;
   border: 1px solid #223047;
   border-radius: 12px;
 }
 
-.summary-card {
-  padding: 18px 20px;
+.editor-heading {
+  margin-bottom: 20px;
 }
 
-.summary-card span {
-  display: block;
-  color: #8da1b9;
-  font-size: 12px;
-}
-
-.summary-card strong {
-  display: block;
-  margin-top: 9px;
-  font-size: 28px;
-}
-
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 370px;
-  gap: 18px;
-}
-
-.map-panel,
-.fleet-panel {
-  padding: 20px;
-  min-width: 0;
-}
-
-.panel-heading {
-  margin-bottom: 18px;
-}
-
-h2 {
-  font-size: 18px;
-  margin: 0;
-  letter-spacing: -0.5px;
-}
-
-.demo-tag,
-.fleet-count {
-  color: #8ea4bd;
-  border: 1px solid #30415a;
-  border-radius: 5px;
-  padding: 7px 9px;
-  white-space: nowrap;
-}
-
-.globe {
-  height: 520px;
-  width: 100%;
-  overflow: hidden;
-  border-radius: 8px;
-  background: #09182b;
-}
-
-.error-message {
-  color: #ffac9e;
-  font-size: 13px;
-}
-
-.map-note {
-  color: #7289a3;
-  font-size: 9px;
-  letter-spacing: 0.4px;
-  margin: 14px 0 0;
-}
-
-.drone-list {
-  display: grid;
+.editor-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 12px;
-}
-
-.drone-card {
-  width: 100%;
-  text-align: left;
-  color: inherit;
+  flex-wrap: wrap;
+  padding: 10px;
   background: #0b1625;
   border: 1px solid #26364d;
-  border-radius: 9px;
-  padding: 15px;
-  cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
 }
 
-.drone-card:hover,
-.drone-card.selected {
-  border-color: #48cbb2;
-  background: #112638;
-}
-
-.drone-card-top {
-  justify-content: flex-start;
+.language-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
-.drone-icon {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  color: #65e0cb;
-  background: #183a42;
-  font-size: 20px;
-}
-
-.drone-title {
-  display: grid;
-  gap: 5px;
-  flex: 1;
-}
-
-.drone-title strong {
+.language-tab,
+.reset-button {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 9px 13px;
+  color: #8da1b9;
+  background: transparent;
+  cursor: pointer;
   font-size: 12px;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
 
-.drone-title span {
-  color: #758da7;
-  font-size: 9px;
+.language-tab:hover,
+.reset-button:hover {
+  color: #e8f0fa;
+  background: #17283c;
 }
 
-.status {
-  font-size: 9px;
-  padding: 6px 7px;
-  border-radius: 4px;
-  background: #203145;
-  color: #b4c4d6;
-}
-
-.status.in-flight {
-  color: #63dfc1;
+.language-tab.active {
+  color: #7fe3c0;
   background: #153a39;
+  border-color: #28635b;
 }
 
-.status.returning {
-  color: #ffc27b;
-  background: #3c2c20;
+.reset-button {
+  border-color: #30415a;
+  white-space: nowrap;
 }
 
-.battery-row {
-  margin-top: 19px;
-  font-size: 10px;
-  color: #91a4bb;
-}
-
-.battery-row strong {
-  color: #dce7f5;
-}
-
-.battery-track {
-  margin-top: 9px;
-  height: 4px;
-  border-radius: 10px;
-  background: #253449;
-  overflow: hidden;
-}
-
-.battery-fill {
-  height: 100%;
-  background: #52d6b5;
-  border-radius: 10px;
-}
-
-.coordinates {
-  color: #7087a0;
-  margin-top: 13px;
-  font-size: 9px;
-  letter-spacing: 0.2px;
-}
-
-.workflow-note {
+.editor-filebar {
   display: flex;
-  gap: 12px;
-  margin-top: 18px;
-  padding: 15px 12px;
-  background: #152438;
-  border-radius: 8px;
-}
-
-.workflow-icon {
-  color: #69d9c1;
-  font-size: 20px;
-}
-
-.workflow-note strong {
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 8px 13px;
+  color: #c0cde0;
+  background: #0a1422;
+  border: 1px solid #26364d;
+  font-family: 'DM Mono', monospace;
   font-size: 11px;
 }
 
-.workflow-note p {
-  color: #879db5;
-  font-size: 10px;
-  line-height: 1.6;
-  margin: 6px 0 0;
-}
-
-footer {
-  color: #60768f;
-  padding: 22px 2px;
+.file-indicator {
+  color: #61d8b5;
   font-size: 9px;
 }
 
-@media (max-width: 1050px) {
-  .workspace {
-    grid-template-columns: 1fr;
-  }
+.editor-status {
+  margin-left: auto;
+  color: #7188a2;
+  font-size: 10px;
+}
 
-  .globe {
-    height: 450px;
-  }
+.monaco-container {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #26364d;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+
+.editor-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  color: #7188a2;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
 }
 
 @media (max-width: 600px) {
-  .dashboard {
-    padding: 16px;
-  }
-
-  .topbar {
-    align-items: flex-start;
-  }
-
-  .connection {
-    font-size: 8px;
-  }
-
-  .summary {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-  }
-
-  .summary-card {
-    padding: 14px;
-  }
-
-  .map-panel,
-  .fleet-panel {
+  .editor-panel {
     padding: 13px;
   }
 
-  .globe {
-    height: 350px;
+  .editor-toolbar {
+    align-items: flex-start;
   }
 
-  footer {
-    flex-wrap: wrap;
+  .language-tabs {
+    width: 100%;
+  }
+
+  .language-tab {
+    padding: 8px 10px;
+  }
+
+  .editor-status {
+    font-size: 9px;
+  }
+
+  .monaco-container .monaco-editor {
+    max-width: 100%;
   }
 }
