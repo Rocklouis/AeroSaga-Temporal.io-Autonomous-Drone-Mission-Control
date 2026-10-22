@@ -1,8 +1,10 @@
 
 package com.aerosaga.backend;
 
+
 import io.temporal.client.WorkflowClient;
 import io.temporal.serviceclient.WorkflowServiceStubs;
+import io.temporal.serviceclient.WorkflowServiceStubsOptions;
 import io.temporal.worker.Worker;
 import io.temporal.worker.WorkerFactory;
 
@@ -12,7 +14,11 @@ public class DroneWorker {
 
     public static void main(String[] args) {
         WorkflowServiceStubs service =
-                WorkflowServiceStubs.newLocalServiceStubs();
+        WorkflowServiceStubs.newServiceStubs(
+                WorkflowServiceStubsOptions.newBuilder()
+                        .setTarget("127.0.0.1:7233")
+                        .build()
+        );
 
         WorkflowClient client = WorkflowClient.newInstance(service);
 
@@ -20,7 +26,10 @@ public class DroneWorker {
 
         Worker worker = factory.newWorker(TASK_QUEUE);
 
-        worker.registerWorkflowImplementationTypes(DroneWorkflowImpl.class);
+        worker.registerWorkflowImplementationTypes(
+        DroneWorkflowImpl.class,
+        MissionSagaWorkflowImpl.class
+);
         worker.registerActivitiesImplementations(new TakeoffActivityImpl());
 
         factory.start();
