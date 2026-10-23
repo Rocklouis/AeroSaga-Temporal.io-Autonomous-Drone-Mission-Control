@@ -51,6 +51,11 @@ function App() {
   const [globeError, setGlobeError] = useState('')
   const [activeLanguage, setActiveLanguage] = useState('java')
   const [codeByLanguage, setCodeByLanguage] = useState(starterCode)
+  const [workflowId, setWorkflowId] = useState('')
+  const [missionStatuses, setMissionStatuses] = useState({})
+  const [missionMessage, setMissionMessage] = useState('')
+  const [missionLoading, setMissionLoading] = useState(false)
+
 
   useEffect(() => {
     let cancelled = false
@@ -244,6 +249,75 @@ useEffect(() => {
   }
 }, [])
 
+async function startMission() {
+  setMissionLoading(true)
+  setMissionMessage('Starting mission...')
+  setMissionStatuses({})
+  setWorkflowId('')
+
+  try {
+    const response = await fetch('http://localhost:8081/api/missions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(drones.map(drone => drone.id))
+    })
+
+    if (!response.ok) {
+      throw new Error(`Mission start failed: HTTP ${response.status}`)
+    }
+
+    const result = await response.json()
+
+    setWorkflowId(result.workflowId)
+    setMissionMessage(result.message || 'Mission started successfully.')
+  } catch (error) {
+    setMissionMessage(error.message || 'Could not start mission.')
+  } finally {
+    setMissionLoading(false)
+  }
+}
+
+useEffect(() => {
+  if (!workflowId) return
+
+  let cancelled = false
+
+  async function fetchMissionStatus() {
+    try {
+      const response = await fetch(
+        `http://localhost:8081/api/missions/${encodeURIComponent(workflowId)}/status`
+      )
+
+      if (!response.ok) {
+        throw new Error(`Status request failed: HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
+
+      if (!cancelled) {
+        setMissionStatuses(result.droneStatuses || {})
+        setMissionMessage('Mission status updated.')
+      }
+    } catch (error) {
+      if (!cancelled) {
+        setMissionMessage(
+          `Mission started; status unavailable: ${error.message}`
+        )
+      }
+    }
+  }
+
+  fetchMissionStatus()
+  const timer = setInterval(fetchMissionStatus, 2000)
+
+  return () => {
+    cancelled = true
+    clearInterval(timer)
+  }
+}, [workflowId])
+
   function focusDrone(drone) {
     setSelectedDrone(drone)
     viewerRef.current?.camera.flyTo({
@@ -300,6 +374,49 @@ useEffect(() => {
           <strong>01</strong>
         </article>
       </section>
+
+<section className="mission-control">
+  <div className="panel-heading">
+    <div>
+      <p className="eyebrow">TEMPORAL WORKFLOW</p>
+      <h2>Mission Control</h2>
+    </div>
+
+    <button
+      type="button"
+      onClick={startMission}
+      disabled={missionLoading}
+    >
+      {missionLoading ? 'Starting...' : 'Start 3-Drone Mission'}
+    </button>
+  </div>
+
+  {missionMessage && (
+    <p role="status" aria-live="polite">
+      {missionMessage}
+    </p>
+  )}
+
+  {workflowId && (
+    <p>
+      <strong>Workflow ID:</strong>{' '}
+      <code>{workflowId}</code>
+    </p>
+  )}
+
+  {Object.keys(missionStatuses).length > 0 && (
+    <div className="mission-status-list">
+      <h3>Drone mission statuses</h3>
+
+      {Object.entries(missionStatuses).map(([droneId, status]) => (
+        <div key={droneId} className="mission-status-row">
+          <span>{droneId}</span>
+          <strong>{status}</strong>
+        </div>
+      ))}
+    </div>
+  )}
+</section>
 
       <section className="workspace">
         <div className="map-panel">
