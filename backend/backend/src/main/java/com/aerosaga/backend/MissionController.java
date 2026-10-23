@@ -55,27 +55,78 @@ public class MissionController {
         );
     }
 
+    
     @GetMapping("/{workflowId}/status")
-    public Map<String, Object> getMissionStatus(
-            @PathVariable String workflowId) {
+public Map<String, Object> getMissionStatus(
+        @PathVariable String workflowId) {
 
+    MissionSagaWorkflow workflow =
+            workflowClient.newWorkflowStub(
+                    MissionSagaWorkflow.class,
+                    workflowId
+            );
+
+    try {
+        // First try the live query for a running workflow.
+        Map<String, String> statuses =
+                workflow.getDroneStatuses();
+
+        return Map.of(
+                "workflowId", workflowId,
+                "droneStatuses", statuses
+        );
+
+    } catch (io.temporal.client.WorkflowQueryException queryError) {
+        // If the workflow has closed, read its recorded result.
         try {
-            MissionSagaWorkflow workflow =
-                    workflowClient.newWorkflowStub(
-                            MissionSagaWorkflow.class,
-                            workflowId
+            WorkflowStub stub = WorkflowStub.fromTyped(workflow);
+
+            List<?> results = stub.getResult(List.class);
+            Map<String, String> statuses =
+                    new java.util.LinkedHashMap<>();
+
+            for (Object item : results) {
+                String result = String.valueOf(item);
+
+                if (result.startsWith("SUCCESS: Drone ")
+                        && result.contains(" has taken off.")) {
+
+                    String droneId = result.substring(
+                            "SUCCESS: Drone ".length(),
+                            result.indexOf(" has taken off.")
                     );
+
+                    statuses.put(droneId, "AIRBORNE");
+
+                } else if (result.startsWith("FAILED: Drone ")
+                        && result.contains(" takeoff failed:")) {
+
+                    String droneId = result.substring(
+                            "FAILED: Drone ".length(),
+                            result.indexOf(" takeoff failed:")
+                    );
+
+                    statuses.put(droneId, "FAILED");
+                }
+            }
 
             return Map.of(
                     "workflowId", workflowId,
-                    "droneStatuses", workflow.getDroneStatuses()
+                    "droneStatuses", statuses
             );
 
         } catch (Exception e) {
+            System.err.println(
+                    "Failed to retrieve mission result: "
+                            + e.getClass().getName()
+                            + " - " + e.getMessage()
+            );
+
             throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Mission status could not be retrieved. Check the workflow ID and whether the workflow is still queryable."
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Could not retrieve mission status or result."
             );
         }
     }
+}
 }

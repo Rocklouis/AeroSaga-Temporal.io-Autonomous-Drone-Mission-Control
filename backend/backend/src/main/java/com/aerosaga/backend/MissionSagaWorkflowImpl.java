@@ -66,27 +66,35 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
             promises.add(promise);
         }
 
+        
+        // Wait for all drone activities to finish.
         try {
             Promise.allOf(promises.toArray(new Promise<?>[0])).get();
-
-            List<String> results = new ArrayList<>();
-
-            for (int i = 0; i < droneIds.size(); i++) {
-                results.add(promises.get(i).get());
-                droneStatuses.put(droneIds.get(i), "AIRBORNE");
-            }
-
-            return results;
-        } catch (RuntimeException exception) {
-            for (String droneId : droneIds) {
-                if (!"AIRBORNE".equals(droneStatuses.get(droneId))) {
-                    droneStatuses.put(droneId, "FAILED");
-                }
-            }
-
-            throw exception;
+        } catch (RuntimeException ignored) {
+            // Handle each drone's result individually below.
         }
+
+        List<String> results = new ArrayList<>();
+
+        for (int i = 0; i < droneIds.size(); i++) {
+            String droneId = droneIds.get(i);
+
+            try {
+                String result = promises.get(i).get();
+                droneStatuses.put(droneId, "AIRBORNE");
+                results.add(result);
+            } catch (RuntimeException exception) {
+                droneStatuses.put(droneId, "FAILED");
+                results.add(
+                    "FAILED: Drone " + droneId
+                    + " takeoff failed: " + exception.getMessage()
+                );
+            }
+        }
+
+        return results;
     }
+
 
     @Override
     public Map<String, String> getDroneStatuses() {
