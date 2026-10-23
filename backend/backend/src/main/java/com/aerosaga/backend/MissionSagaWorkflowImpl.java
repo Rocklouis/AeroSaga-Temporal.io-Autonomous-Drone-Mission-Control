@@ -66,35 +66,74 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
             promises.add(promise);
         }
 
-        
-        // Wait for all drone activities to finish.
+        // Wait until all takeoff activities finish.
         try {
-            Promise.allOf(promises.toArray(new Promise<?>[0])).get();
+            Promise.allOf(
+                    promises.toArray(new Promise<?>[0])
+            ).get();
         } catch (RuntimeException ignored) {
-            // Handle each drone's result individually below.
+            // Inspect each drone's result below.
         }
 
         List<String> results = new ArrayList<>();
+        List<String> successfullyLaunched = new ArrayList<>();
+        boolean missionHasFailure = false;
 
         for (int i = 0; i < droneIds.size(); i++) {
             String droneId = droneIds.get(i);
 
             try {
                 String result = promises.get(i).get();
+
                 droneStatuses.put(droneId, "AIRBORNE");
+                successfullyLaunched.add(droneId);
                 results.add(result);
+
             } catch (RuntimeException exception) {
                 droneStatuses.put(droneId, "FAILED");
+                missionHasFailure = true;
+
                 results.add(
-                    "FAILED: Drone " + droneId
-                    + " takeoff failed: " + exception.getMessage()
+                        "FAILED: Drone " + droneId
+                                + " takeoff failed."
                 );
+            }
+        }
+
+        // Saga compensation: return successful drones to base
+        // if any drone fails to take off.
+        if (missionHasFailure) {
+            for (String droneId : successfullyLaunched) {
+                droneStatuses.put(droneId, "RETURNING_TO_BASE");
+
+                try {
+                    String compensationResult =
+                            takeoffActivity.returnToBase(droneId);
+
+                    droneStatuses.put(
+                            droneId,
+                            "RETURNED_TO_BASE"
+                    );
+
+                    results.add(compensationResult);
+
+                } catch (RuntimeException exception) {
+                    droneStatuses.put(
+                            droneId,
+                            "COMPENSATION_FAILED"
+                    );
+
+                    results.add(
+                            "COMPENSATION FAILED: Drone "
+                                    + droneId
+                                    + " could not return to base."
+                    );
+                }
             }
         }
 
         return results;
     }
-
 
     @Override
     public Map<String, String> getDroneStatuses() {

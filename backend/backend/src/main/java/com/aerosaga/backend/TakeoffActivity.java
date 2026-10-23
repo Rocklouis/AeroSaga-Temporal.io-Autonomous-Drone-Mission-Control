@@ -1,3 +1,4 @@
+
 package com.aerosaga.backend;
 
 import io.temporal.activity.ActivityInterface;
@@ -8,4 +9,7 @@ public interface TakeoffActivity {
 
     @ActivityMethod
     String performTakeoff(String droneId);
+
+    @ActivityMethod
+    String returnToBase(String droneId);
 }
