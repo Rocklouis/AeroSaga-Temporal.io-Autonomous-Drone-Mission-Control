@@ -134,36 +134,77 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    const socket = new WebSocket('ws://localhost:8081/ws/telemetry')
-    let intentionalClose = false
+  
+useEffect(() => {
+  let socket
+  let reconnectTimer
+  let intentionalClose = false
+  let reconnectDelay = 1000
 
-    socket.onopen = () => setTelemetryStatus('Connected')
+  function connect() {
+    if (intentionalClose) return
+
+    setTelemetryStatus('Connecting')
+
+    socket = new WebSocket('ws://localhost:8081/ws/telemetry')
+
+    socket.onopen = () => {
+      setTelemetryStatus('Connected')
+      reconnectDelay = 1000
+    }
 
     socket.onmessage = event => {
       try {
         const telemetry = JSON.parse(event.data)
         if (!Array.isArray(telemetry)) return
 
-        setDrones(previous => telemetry.map(update => {
-          const existing = previous.find(drone => drone.id === update.id)
-          return {
-            ...(existing ?? { id: update.id, name: `Drone ${update.id}` }),
-            lat: Number(update.lat),
-            lon: Number(update.lon),
-            altitude: Number(update.altitude ?? 120)
-          }
-        }))
+        setDrones(previous =>
+          telemetry.map(update => {
+            const existing = previous.find(
+              drone => drone.id === update.id
+            )
+
+            return {
+              ...(existing ?? {
+                id: update.id,
+                name: `Drone ${update.id}`,
+                status: 'Unknown',
+                battery: 0
+              }),
+              lat: Number(update.lat),
+              lon: Number(update.lon),
+              altitude: Number(update.altitude ?? 120)
+            }
+          })
+        )
 
         const viewer = viewerRef.current
+
         if (viewer && !viewer.isDestroyed()) {
           for (const update of telemetry) {
-            const entity = viewer.entities.getById(`drone-${update.id}`)
+            const lat = Number(update.lat)
+            const lon = Number(update.lon)
+            const altitude = Number(update.altitude ?? 120)
+
+            if (
+              !Number.isFinite(lat) ||
+              !Number.isFinite(lon) ||
+              !Number.isFinite(altitude) ||
+              lat < -90 || lat > 90 ||
+              lon < -180 || lon > 180
+            ) {
+              continue
+            }
+
+            const entity = viewer.entities.getById(
+              `drone-${update.id}`
+            )
+
             if (entity) {
               entity.position = Cartesian3.fromDegrees(
-                Number(update.lon),
-                Number(update.lat),
-                Number(update.altitude ?? 120)
+                lon,
+                lat,
+                altitude
               )
             }
           }
@@ -173,17 +214,35 @@ function App() {
       }
     }
 
-    socket.onerror = () => setTelemetryStatus('Connection error')
-
-    socket.onclose = () => {
-      if (!intentionalClose) setTelemetryStatus('Disconnected')
-    }
-
-    return () => {
-      intentionalClose = true
+    socket.onerror = () => {
+      setTelemetryStatus('Connection error')
       socket.close()
     }
-  }, [])
+
+    socket.onclose = () => {
+      if (intentionalClose) return
+
+      setTelemetryStatus('Disconnected')
+
+      reconnectTimer = setTimeout(() => {
+        connect()
+      }, reconnectDelay)
+
+      reconnectDelay = Math.min(reconnectDelay * 2, 10000)
+    }
+  }
+
+  connect()
+
+  return () => {
+    intentionalClose = true
+    clearTimeout(reconnectTimer)
+
+    if (socket) {
+      socket.close()
+    }
+  }
+}, [])
 
   function focusDrone(drone) {
     setSelectedDrone(drone)
