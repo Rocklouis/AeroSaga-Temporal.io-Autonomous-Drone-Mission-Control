@@ -1,0 +1,31 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: drone-simulator
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+aerosaga:
+  sim:
+    fleet-size: 50
+    tick-interval-ms: 1000
+    # Backend gateway – change if teammate uses another path
+    gateway-url: http://localhost:8080/api/telemetry/batch
+    publish-telemetry: false
+    # Mumbai region box for Cesium
+    base-lat: 19.0760
+    base-lng: 72.8777
+    spread: 0.15
+    # Low battery triggers automatic RTB (compensation in the world model)
+    low-battery-threshold: 10
+    reconnect-rtb-threshold: 15
+
+logging:
+  level:
+    com.aerosaga.sim: INFO
