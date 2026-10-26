@@ -1,6 +1,6 @@
 
 package com.aerosaga.backend;
-
+import io.temporal.client.WorkflowQueryException;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.client.WorkflowStub;
@@ -155,4 +155,34 @@ public class MissionController {
             }
         }
     }
+    
+    @GetMapping("/{workflowId}/steps")
+    public Map<String, Object> getMissionSteps(
+            @PathVariable String workflowId) {
+
+        MissionSagaWorkflow workflow =
+                workflowClient.newWorkflowStub(
+                        MissionSagaWorkflow.class,
+                        workflowId
+                );
+
+        try {
+            Map<String, Map<String, String>> steps =
+                    workflow.getMissionSteps();
+
+            return Map.of(
+                    "workflowId", workflowId,
+                    "missionSteps", steps
+            );
+
+        } catch (WorkflowQueryException queryError) {
+            return Map.of(
+                    "workflowId", workflowId,
+                    "missionSteps", Map.of(),
+                    "message",
+                    "Workflow query unavailable; it may have completed."
+            );
+        }
+    }
+
 }

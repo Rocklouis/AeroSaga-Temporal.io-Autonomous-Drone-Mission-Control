@@ -6,34 +6,60 @@ public class TakeoffActivityImpl implements TakeoffActivity {
     @Override
     public String performTakeoff(String droneId) {
         System.out.println(
-                "Drone " + droneId + " is preparing for takeoff..."
+                "Drone " + droneId + " preparing for takeoff..."
         );
 
         if ("DR-FAIL".equals(droneId)) {
-            System.out.println(
-                    "Simulated takeoff failure for " + droneId
-            );
             throw new RuntimeException(
                     "Simulated takeoff failure for " + droneId
             );
         }
 
         System.out.println(
-                "Drone " + droneId + " has taken off successfully!"
+                "Drone " + droneId + " took off successfully."
         );
 
         return "SUCCESS: Drone " + droneId + " has taken off.";
     }
 
     @Override
+    public String navigateToDropPoint(String droneId) {
+        System.out.println(
+                "Drone " + droneId + " navigating to drop point..."
+        );
+
+        return "NAVIGATED: Drone " + droneId
+                + " reached the drop point.";
+    }
+
+    @Override
+    public String dropPackage(String droneId) {
+        System.out.println(
+                "Drone " + droneId + " attempting package drop..."
+        );
+
+        if ("DR-DROP-FAIL".equals(droneId)) {
+            throw new RuntimeException(
+                    "Simulated package-drop failure for " + droneId
+            );
+        }
+
+        System.out.println(
+                "Drone " + droneId + " dropped the package."
+        );
+
+        return "PACKAGE_DROPPED: Drone " + droneId;
+    }
+
+    @Override
     public String returnToBase(String droneId) {
         System.out.println(
-                "Compensation started: Drone " + droneId
-                        + " is returning to base..."
+                "Compensation: Drone " + droneId
+                        + " returning to base..."
         );
 
         System.out.println(
-                "Drone " + droneId + " has returned to base."
+                "Drone " + droneId + " returned to base."
         );
 
         return "COMPENSATION: Drone " + droneId
