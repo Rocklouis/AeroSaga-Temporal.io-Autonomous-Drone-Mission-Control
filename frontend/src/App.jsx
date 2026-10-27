@@ -11,11 +11,62 @@ import {
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import './App.css'
 
-const initialDrones = [
-  { id: 'DR-001', name: 'Drone Alpha', status: 'In Flight', lat: 22.5726, lon: 88.3639, battery: 86 },
-  { id: 'DR-002', name: 'Drone Bravo', status: 'Ready', lat: 28.6139, lon: 77.2090, battery: 100 },
-  { id: 'DR-003', name: 'Drone Charlie', status: 'Returning', lat: 19.0760, lon: 72.8777, battery: 42 }
+const FLEET_SIZE = 60
+
+const originalDrones = [
+  {
+    id: 'DR-001',
+    name: 'Drone Alpha',
+    status: 'In Flight',
+    lat: 22.5726,
+    lon: 88.3639,
+    battery: 86
+  },
+  {
+    id: 'DR-002',
+    name: 'Drone Bravo',
+    status: 'Ready',
+    lat: 28.6139,
+    lon: 77.2090,
+    battery: 100
+  },
+  {
+    id: 'DR-003',
+    name: 'Drone Charlie',
+    status: 'Returning',
+    lat: 19.0760,
+    lon: 72.8777,
+    battery: 42
+  }
 ]
+
+const droneNames = [
+  'Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo',
+  'Foxtrot', 'Golf', 'Hotel', 'India', 'Juliet'
+]
+
+const initialDrones = Array.from({ length: FLEET_SIZE }, (_, index) => {
+  const number = index + 1
+
+  if (number <= originalDrones.length) {
+    return {
+      ...originalDrones[index],
+      altitude: 120,
+      simulated: true
+    }
+  }
+
+  return {
+    id: `DR-${String(number).padStart(3, '0')}`,
+    name: `Drone ${droneNames[(number - 1) % droneNames.length]} ${number}`,
+    status: ['In Flight', 'Ready', 'Returning'][index % 3],
+    lat: 8 + Math.random() * 27,
+    lon: 68 + Math.random() * 29,
+    battery: 30 + Math.floor(Math.random() * 71),
+    altitude: 120,
+    simulated: true
+  }
+})
 
 const starterCode = {
   java: `public class Main {
@@ -41,9 +92,18 @@ const languages = [
   { id: 'javascript', label: 'JavaScript', extension: 'main.js' }
 ]
 
+function getDroneColor(status) {
+  if (status === 'Returning') return Color.ORANGE
+  if (status === 'Ready') return Color.LIME
+  return Color.CYAN
+}
+
 function App() {
   const globeRef = useRef(null)
   const viewerRef = useRef(null)
+
+  // Store the latest telemetry timestamp separately for each drone.
+  const lastTelemetryByDroneRef = useRef(new Map())
 
   const [selectedDrone, setSelectedDrone] = useState(null)
   const [drones, setDrones] = useState(initialDrones)
@@ -56,13 +116,17 @@ function App() {
   const [missionMessage, setMissionMessage] = useState('')
   const [missionLoading, setMissionLoading] = useState(false)
 
-
+  // Initialize Cesium and create all 60 drone markers.
   useEffect(() => {
     let cancelled = false
     let viewer
 
     async function initializeGlobe() {
       try {
+        const terrainProvider = await createWorldTerrainAsync()
+
+        if (cancelled) return
+
         viewer = new Viewer(globeRef.current, {
           animation: false,
           timeline: false,
@@ -73,7 +137,8 @@ function App() {
           navigationHelpButton: false,
           infoBox: false,
           selectionIndicator: false,
-          terrainProvider: await createWorldTerrainAsync()
+          terrainProvider,
+          requestRenderMode: false
         })
 
         if (cancelled) {
@@ -87,21 +152,27 @@ function App() {
           viewer.entities.add({
             id: `drone-${drone.id}`,
             name: drone.name,
-            position: Cartesian3.fromDegrees(drone.lon, drone.lat, 120),
+            position: Cartesian3.fromDegrees(
+              drone.lon,
+              drone.lat,
+              drone.altitude
+            ),
             point: {
-              pixelSize: 13,
-              color: drone.status === 'Returning' ? Color.ORANGE : Color.CYAN,
+              pixelSize: 10,
+              color: getDroneColor(drone.status),
               outlineColor: Color.WHITE,
-              outlineWidth: 2
+              outlineWidth: 2,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY
             },
             label: {
               text: drone.id,
-              font: '13px sans-serif',
+              font: '11px sans-serif',
               fillColor: Color.WHITE,
               outlineColor: Color.BLACK,
               outlineWidth: 3,
               style: 2,
-              pixelOffset: new Cartesian3(0, -20, 0)
+              pixelOffset: new Cartesian3(0, -17, 0),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY
             }
           })
         }
@@ -112,14 +183,16 @@ function App() {
 
         try {
           const buildings = await createOsmBuildingsAsync()
+
           if (!cancelled && !viewer.isDestroyed()) {
             viewer.scene.primitives.add(buildings)
           }
         } catch {
-          // The globe and drone markers work without 3D buildings.
+          // The globe still works if 3D buildings are unavailable.
         }
       } catch (error) {
         console.error('Cesium initialization failed:', error)
+
         if (!cancelled) {
           setGlobeError(
             'The 3D globe could not initialize. Check your internet connection and browser console.'
@@ -132,80 +205,193 @@ function App() {
 
     return () => {
       cancelled = true
+
       if (viewer && !viewer.isDestroyed()) {
         viewer.destroy()
       }
+
       viewerRef.current = null
     }
   }, [])
 
-  
-useEffect(() => {
-  let socket
-  let reconnectTimer
-  let intentionalClose = false
-  let reconnectDelay = 1000
+  // Move every drone independently unless it has recent backend telemetry.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now()
+      const viewer = viewerRef.current
 
-  function connect() {
-    if (intentionalClose) return
+      setDrones(previous =>
+        previous.map((drone, index) => {
+          const lastTelemetryAt =
+            lastTelemetryByDroneRef.current.get(drone.id) ?? 0
 
-    setTelemetryStatus('Connecting')
+          // Only pause simulation for the drone receiving fresh telemetry.
+          if (now - lastTelemetryAt < 5000) {
+            return drone
+          }
 
-    socket = new WebSocket('ws://localhost:8081/ws/telemetry')
+          // Give every drone a different, repeatable movement pattern.
+          const phase = now / 5000 + index * 1.7
 
-    socket.onopen = () => {
-      setTelemetryStatus('Connected')
-      reconnectDelay = 1000
-    }
+          const lat = Math.max(
+            -85,
+            Math.min(
+              85,
+              drone.lat + Math.sin(phase) * 0.006
+            )
+          )
 
-    socket.onmessage = event => {
-      try {
-        const telemetry = JSON.parse(event.data)
-        if (!Array.isArray(telemetry)) return
+          const lon = Math.max(
+            -180,
+            Math.min(
+              180,
+              drone.lon + Math.cos(phase) * 0.006
+            )
+          )
 
-        setDrones(previous =>
-          telemetry.map(update => {
-            const existing = previous.find(
-              drone => drone.id === update.id
+          if (viewer && !viewer.isDestroyed()) {
+            const entity = viewer.entities.getById(
+              `drone-${drone.id}`
             )
 
-            return {
-              ...(existing ?? {
-                id: update.id,
-                name: `Drone ${update.id}`,
-                status: 'Unknown',
-                battery: 0
-              }),
-              lat: Number(update.lat),
-              lon: Number(update.lon),
-              altitude: Number(update.altitude ?? 120)
+            if (entity) {
+              entity.position = Cartesian3.fromDegrees(
+                lon,
+                lat,
+                drone.altitude ?? 120
+              )
             }
-          })
-        )
+          }
 
-        const viewer = viewerRef.current
+          return { ...drone, lat, lon }
+        })
+      )
+    }, 1000)
 
-        if (viewer && !viewer.isDestroyed()) {
-          for (const update of telemetry) {
+    return () => clearInterval(timer)
+  }, [])
+
+  // Connect to backend telemetry and reconnect when disconnected.
+  useEffect(() => {
+    let socket
+    let reconnectTimer
+    let intentionalClose = false
+    let reconnectDelay = 1000
+
+    function connect() {
+      if (intentionalClose) return
+
+      setTelemetryStatus('Connecting')
+
+      socket = new WebSocket('ws://localhost:8081/ws/telemetry')
+
+      socket.onopen = () => {
+        setTelemetryStatus('Connected')
+        reconnectDelay = 1000
+      }
+
+      socket.onmessage = event => {
+        try {
+          const telemetry = JSON.parse(event.data)
+
+          if (!Array.isArray(telemetry)) return
+
+          // Declare validUpdates only once.
+          const validUpdates = telemetry.filter(update => {
             const lat = Number(update.lat)
             const lon = Number(update.lon)
             const altitude = Number(update.altitude ?? 120)
 
-            if (
-              !Number.isFinite(lat) ||
-              !Number.isFinite(lon) ||
-              !Number.isFinite(altitude) ||
-              lat < -90 || lat > 90 ||
-              lon < -180 || lon > 180
-            ) {
-              continue
-            }
+            return (
+              update.id != null &&
+              Number.isFinite(lat) &&
+              Number.isFinite(lon) &&
+              Number.isFinite(altitude) &&
+              lat >= -90 &&
+              lat <= 90 &&
+              lon >= -180 &&
+              lon <= 180
+            )
+          })
 
-            const entity = viewer.entities.getById(
-              `drone-${update.id}`
+          // Track telemetry freshness for each individual drone.
+          const telemetryTime = Date.now()
+
+          for (const update of validUpdates) {
+            lastTelemetryByDroneRef.current.set(
+              String(update.id),
+              telemetryTime
+            )
+          }
+
+          // Merge telemetry into the existing fleet instead of replacing it.
+          setDrones(previous => {
+            const droneMap = new Map(
+              previous.map(drone => [drone.id, drone])
             )
 
-            if (entity) {
+            for (const update of validUpdates) {
+              const id = String(update.id)
+              const existing = droneMap.get(id)
+
+              droneMap.set(id, {
+                ...(existing ?? {
+                  id,
+                  name: `Drone ${id}`,
+                  status: 'Unknown',
+                  battery: 0
+                }),
+                lat: Number(update.lat),
+                lon: Number(update.lon),
+                altitude: Number(update.altitude ?? 120),
+                simulated: false
+              })
+            }
+
+            return Array.from(droneMap.values())
+          })
+
+          // Update the corresponding Cesium markers.
+          const viewer = viewerRef.current
+
+          if (viewer && !viewer.isDestroyed()) {
+            for (const update of validUpdates) {
+              const id = String(update.id)
+              const lat = Number(update.lat)
+              const lon = Number(update.lon)
+              const altitude = Number(update.altitude ?? 120)
+
+              let entity = viewer.entities.getById(`drone-${id}`)
+
+              if (!entity) {
+                entity = viewer.entities.add({
+                  id: `drone-${id}`,
+                  name: `Drone ${id}`,
+                  position: Cartesian3.fromDegrees(
+                    lon,
+                    lat,
+                    altitude
+                  ),
+                  point: {
+                    pixelSize: 10,
+                    color: Color.CYAN,
+                    outlineColor: Color.WHITE,
+                    outlineWidth: 2,
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                  },
+                  label: {
+                    text: id,
+                    font: '11px sans-serif',
+                    fillColor: Color.WHITE,
+                    outlineColor: Color.BLACK,
+                    outlineWidth: 3,
+                    style: 2,
+                    pixelOffset: new Cartesian3(0, -17, 0),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                  }
+                })
+              }
+
               entity.position = Cartesian3.fromDegrees(
                 lon,
                 lat,
@@ -213,116 +399,131 @@ useEffect(() => {
               )
             }
           }
+        } catch (error) {
+          console.error('Could not parse AeroSaga telemetry:', error)
         }
-      } catch (error) {
-        console.error('Could not parse AeroSaga telemetry:', error)
+      }
+
+      socket.onerror = () => {
+        setTelemetryStatus('Connection error')
+        socket.close()
+      }
+
+      socket.onclose = () => {
+        if (intentionalClose) return
+
+        setTelemetryStatus('Disconnected')
+
+        reconnectTimer = setTimeout(connect, reconnectDelay)
+        reconnectDelay = Math.min(reconnectDelay * 2, 10000)
       }
     }
 
-    socket.onerror = () => {
-      setTelemetryStatus('Connection error')
-      socket.close()
+    connect()
+
+    return () => {
+      intentionalClose = true
+      clearTimeout(reconnectTimer)
+
+      if (socket) socket.close()
     }
+  }, [])
 
-    socket.onclose = () => {
-      if (intentionalClose) return
+  // Start a mission through the existing backend API.
+  async function startMission() {
+    setMissionLoading(true)
+    setMissionMessage('Starting mission...')
+    setMissionStatuses({})
+    setWorkflowId('')
 
-      setTelemetryStatus('Disconnected')
-
-      reconnectTimer = setTimeout(() => {
-        connect()
-      }, reconnectDelay)
-
-      reconnectDelay = Math.min(reconnectDelay * 2, 10000)
-    }
-  }
-
-  connect()
-
-  return () => {
-    intentionalClose = true
-    clearTimeout(reconnectTimer)
-
-    if (socket) {
-      socket.close()
-    }
-  }
-}, [])
-
-async function startMission() {
-  setMissionLoading(true)
-  setMissionMessage('Starting mission...')
-  setMissionStatuses({})
-  setWorkflowId('')
-
-  try {
-    const response = await fetch('http://localhost:8081/api/missions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(drones.map(drone => drone.id))
-    })
-
-    if (!response.ok) {
-      throw new Error(`Mission start failed: HTTP ${response.status}`)
-    }
-
-    const result = await response.json()
-
-    setWorkflowId(result.workflowId)
-    setMissionMessage(result.message || 'Mission started successfully.')
-  } catch (error) {
-    setMissionMessage(error.message || 'Could not start mission.')
-  } finally {
-    setMissionLoading(false)
-  }
-}
-
-useEffect(() => {
-  if (!workflowId) return
-
-  let cancelled = false
-
-  async function fetchMissionStatus() {
     try {
       const response = await fetch(
-        `http://localhost:8081/api/missions/${encodeURIComponent(workflowId)}/status`
+        'http://localhost:8081/api/missions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(drones.map(drone => drone.id))
+        }
       )
 
       if (!response.ok) {
-        throw new Error(`Status request failed: HTTP ${response.status}`)
+        throw new Error(`Mission start failed: HTTP ${response.status}`)
       }
 
       const result = await response.json()
 
-      if (!cancelled) {
-        setMissionStatuses(result.droneStatuses || {})
-        setMissionMessage('Mission status updated.')
-      }
+      setWorkflowId(result.workflowId)
+      setMissionMessage(
+        result.message || 'Mission started successfully.'
+      )
     } catch (error) {
-      if (!cancelled) {
-        setMissionMessage(
-          `Mission started; status unavailable: ${error.message}`
-        )
-      }
+      setMissionMessage(
+        error.message || 'Could not start mission.'
+      )
+    } finally {
+      setMissionLoading(false)
     }
   }
 
-  fetchMissionStatus()
-  const timer = setInterval(fetchMissionStatus, 2000)
+  // Poll the Temporal mission status endpoint.
+  useEffect(() => {
+    if (!workflowId) return
 
-  return () => {
-    cancelled = true
-    clearInterval(timer)
-  }
-}, [workflowId])
+    let cancelled = false
+
+    async function fetchMissionStatus() {
+      try {
+        const response = await fetch(
+          `http://localhost:8081/api/missions/${encodeURIComponent(workflowId)}/status`
+        )
+
+        if (!response.ok) {
+          throw new Error(
+            `Status request failed: HTTP ${response.status}`
+          )
+        }
+
+        const result = await response.json()
+
+        if (!cancelled) {
+          setMissionStatuses(result.droneStatuses || {})
+          setMissionMessage('Mission status updated.')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMissionMessage(
+            `Mission started; status unavailable: ${error.message}`
+          )
+        }
+      }
+    }
+
+    fetchMissionStatus()
+
+    const timer = setInterval(fetchMissionStatus, 2000)
+
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [workflowId])
 
   function focusDrone(drone) {
     setSelectedDrone(drone)
-    viewerRef.current?.camera.flyTo({
-      destination: Cartesian3.fromDegrees(drone.lon, drone.lat, 450000)
-    })
+
+    const viewer = viewerRef.current
+
+    if (viewer && !viewer.isDestroyed()) {
+      viewer.camera.flyTo({
+        destination: Cartesian3.fromDegrees(
+          drone.lon,
+          drone.lat,
+          450000
+        )
+      })
+    }
   }
 
   function updateCode(value) {
@@ -343,15 +544,34 @@ useEffect(() => {
     language => language.id === activeLanguage
   )
 
+  const inFlightCount = drones.filter(
+    drone => drone.status === 'In Flight'
+  ).length
+
+  const readyCount = drones.filter(
+    drone => drone.status === 'Ready'
+  ).length
+
+  const returningCount = drones.filter(
+    drone => drone.status === 'Returning'
+  ).length
+
   return (
     <main className="dashboard">
       <header className="topbar">
         <div>
           <p className="eyebrow">AUTONOMOUS FLIGHT OPERATIONS</p>
-          <h1>AeroSaga <span>Mission Control</span></h1>
+          <h1>
+            AeroSaga <span>Mission Control</span>
+          </h1>
         </div>
+
         <div className="connection">
-          <span className={`live-dot ${telemetryStatus === 'Connected' ? 'connected' : ''}`} />
+          <span
+            className={`live-dot ${
+              telemetryStatus === 'Connected' ? 'connected' : ''
+            }`}
+          />
           TELEMETRY {telemetryStatus.toUpperCase()}
         </div>
       </header>
@@ -359,64 +579,69 @@ useEffect(() => {
       <section className="summary">
         <article className="summary-card">
           <span>Total fleet</span>
-          <strong>03</strong>
+          <strong>{String(drones.length).padStart(2, '0')}</strong>
         </article>
+
         <article className="summary-card">
           <span>In flight</span>
-          <strong>01</strong>
+          <strong>{String(inFlightCount).padStart(2, '0')}</strong>
         </article>
+
         <article className="summary-card">
           <span>Ready</span>
-          <strong>01</strong>
+          <strong>{String(readyCount).padStart(2, '0')}</strong>
         </article>
+
         <article className="summary-card">
           <span>Returning</span>
-          <strong>01</strong>
+          <strong>{String(returningCount).padStart(2, '0')}</strong>
         </article>
       </section>
 
-<section className="mission-control">
-  <div className="panel-heading">
-    <div>
-      <p className="eyebrow">TEMPORAL WORKFLOW</p>
-      <h2>Mission Control</h2>
-    </div>
+      <section className="mission-control">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">TEMPORAL WORKFLOW</p>
+            <h2>Mission Control</h2>
+          </div>
 
-    <button
-      type="button"
-      onClick={startMission}
-      disabled={missionLoading}
-    >
-      {missionLoading ? 'Starting...' : 'Start 3-Drone Mission'}
-    </button>
-  </div>
-
-  {missionMessage && (
-    <p role="status" aria-live="polite">
-      {missionMessage}
-    </p>
-  )}
-
-  {workflowId && (
-    <p>
-      <strong>Workflow ID:</strong>{' '}
-      <code>{workflowId}</code>
-    </p>
-  )}
-
-  {Object.keys(missionStatuses).length > 0 && (
-    <div className="mission-status-list">
-      <h3>Drone mission statuses</h3>
-
-      {Object.entries(missionStatuses).map(([droneId, status]) => (
-        <div key={droneId} className="mission-status-row">
-          <span>{droneId}</span>
-          <strong>{status}</strong>
+          <button
+            type="button"
+            onClick={startMission}
+            disabled={missionLoading}
+          >
+            {missionLoading
+              ? 'Starting...'
+              : `Start ${drones.length}-Drone Mission`}
+          </button>
         </div>
-      ))}
-    </div>
-  )}
-</section>
+
+        {missionMessage && (
+          <p role="status" aria-live="polite">
+            {missionMessage}
+          </p>
+        )}
+
+        {workflowId && (
+          <p>
+            <strong>Workflow ID:</strong>{' '}
+            <code>{workflowId}</code>
+          </p>
+        )}
+
+        {Object.keys(missionStatuses).length > 0 && (
+          <div className="mission-status-list">
+            <h3>Drone mission statuses</h3>
+
+            {Object.entries(missionStatuses).map(([droneId, status]) => (
+              <div key={droneId} className="mission-status-row">
+                <span>{droneId}</span>
+                <strong>{status}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="workspace">
         <div className="map-panel">
@@ -425,11 +650,18 @@ useEffect(() => {
               <p className="eyebrow">LIVE OPERATIONS / INDIA</p>
               <h2>Fleet overview</h2>
             </div>
-            <span className="demo-tag">LIVE SIMULATED GPS</span>
+
+            <span className="demo-tag">
+              {drones.length} DRONES
+            </span>
           </div>
 
-          {globeError && <p className="error-message">{globeError}</p>}
+          {globeError && (
+            <p className="error-message">{globeError}</p>
+          )}
+
           <div className="globe" ref={globeRef} />
+
           <p className="map-note">
             Simulated GPS updates · Not connected to real drones
           </p>
@@ -441,25 +673,38 @@ useEffect(() => {
               <p className="eyebrow">MISSION RESOURCES</p>
               <h2>Drone fleet</h2>
             </div>
-            <span className="fleet-count">03 UNITS</span>
+
+            <span className="fleet-count">
+              {String(drones.length).padStart(2, '0')} UNITS
+            </span>
           </div>
 
           <div className="drone-list">
             {drones.map(drone => (
               <button
                 type="button"
-                className={`drone-card ${selectedDrone?.id === drone.id ? 'selected' : ''}`}
+                className={`drone-card ${
+                  selectedDrone?.id === drone.id ? 'selected' : ''
+                }`}
                 key={drone.id}
                 onClick={() => focusDrone(drone)}
               >
                 <div className="drone-card-top">
                   <div className="drone-icon">✦</div>
+
                   <div className="drone-title">
                     <strong>{drone.name}</strong>
                     <span>{drone.id}</span>
                   </div>
-                  <span className={`status ${drone.status.toLowerCase().replace(' ', '-')}`}>
-                    {drone.status}
+
+                  <span
+                    className={`status ${
+                      (drone.status || 'Unknown')
+                        .toLowerCase()
+                        .replace(' ', '-')
+                    }`}
+                  >
+                    {drone.status || 'Unknown'}
                   </span>
                 </div>
 
@@ -476,7 +721,7 @@ useEffect(() => {
                 </div>
 
                 <div className="coordinates">
-                  {drone.lat.toFixed(4)}° N, {drone.lon.toFixed(4)}° E
+                  {drone.lat.toFixed(4)}°, {drone.lon.toFixed(4)}°
                 </div>
               </button>
             ))}
@@ -486,7 +731,9 @@ useEffect(() => {
             <span className="workflow-icon">↗</span>
             <div>
               <strong>Temporal workflows</strong>
-              <p>Simulated takeoff workflow implemented in the backend.</p>
+              <p>
+                Simulated takeoff workflow implemented in the backend.
+              </p>
             </div>
           </div>
         </aside>
@@ -498,18 +745,25 @@ useEffect(() => {
             <p className="eyebrow">DEVELOPMENT ENVIRONMENT</p>
             <h2>Mission Code Workspace</h2>
           </div>
+
           <span className="demo-tag">EDITOR PREVIEW</span>
         </div>
 
         <div className="editor-toolbar">
-          <div className="language-tabs" role="tablist" aria-label="Programming language">
+          <div
+            className="language-tabs"
+            role="tablist"
+            aria-label="Programming language"
+          >
             {languages.map(language => (
               <button
                 key={language.id}
                 type="button"
                 role="tab"
                 aria-selected={activeLanguage === language.id}
-                className={`language-tab ${activeLanguage === language.id ? 'active' : ''}`}
+                className={`language-tab ${
+                  activeLanguage === language.id ? 'active' : ''
+                }`}
                 onClick={() => setActiveLanguage(language.id)}
               >
                 {language.label}
@@ -529,7 +783,9 @@ useEffect(() => {
         <div className="editor-filebar">
           <span className="file-indicator">●</span>
           <span>{currentLanguage.extension}</span>
-          <span className="editor-status">Editable · Local preview</span>
+          <span className="editor-status">
+            Editable · Local preview
+          </span>
         </div>
 
         <div className="monaco-container">
