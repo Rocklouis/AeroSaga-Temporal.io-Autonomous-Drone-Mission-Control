@@ -97,6 +97,25 @@ function getDroneColor(status) {
   if (status === 'Ready') return Color.LIME
   return Color.CYAN
 }
+function MetricCard({ title, value, unit, description, icon }) {
+  return (
+    <article className="metric-card">
+      <div className="metric-card-heading">
+        <span className="metric-icon" aria-hidden="true">
+          {icon}
+        </span>
+        <span className="metric-label">{title}</span>
+      </div>
+
+      <div className="metric-value">
+        {value}
+        {unit && <span className="metric-unit"> {unit}</span>}
+      </div>
+
+      <p className="metric-description">{description}</p>
+    </article>
+  )
+}
 
 function App() {
   const globeRef = useRef(null)
@@ -597,7 +616,58 @@ function App() {
           <strong>{String(returningCount).padStart(2, '0')}</strong>
         </article>
       </section>
+<section className="performance-panel">
+  <div className="panel-heading">
+    <div>
+      <p className="eyebrow">WEEK 3 / PERFORMANCE BENCHMARKS</p>
+      <h2>Execution Performance</h2>
+      <p className="performance-intro">
+        Compare Polyglot execution with a traditional mock REST call.
+      </p>
+    </div>
 
+    <span className="demo-tag">SAMPLE DATA</span>
+  </div>
+
+  <div className="metrics-grid">
+    <MetricCard
+      title="Polyglot Execution"
+      value="8.4"
+      unit="ms"
+      icon="⚡"
+      description="Illustrative execution time"
+    />
+
+    <MetricCard
+      title="Mock REST Call"
+      value="24.7"
+      unit="ms"
+      icon="↗"
+      description="Illustrative request time"
+    />
+
+    <MetricCard
+      title="Time Difference"
+      value="16.3"
+      unit="ms"
+      icon="◷"
+      description="Sample REST time minus Polyglot time"
+    />
+
+    <MetricCard
+      title="Successful Executions"
+      value="12"
+      unit=""
+      icon="✓"
+      description="Illustrative count, not live executions"
+    />
+  </div>
+
+  <p className="benchmark-disclaimer" role="note">
+    Preview only — these values are examples, not measured results.
+    Real benchmark data will be connected on Day 2.
+  </p>
+</section>
       <section className="mission-control">
         <div className="panel-heading">
           <div>
