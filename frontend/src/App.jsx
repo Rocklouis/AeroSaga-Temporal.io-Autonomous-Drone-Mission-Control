@@ -1,4 +1,4 @@
-
+﻿
 import { useEffect, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import {
@@ -134,7 +134,36 @@ function App() {
   const [missionStatuses, setMissionStatuses] = useState({})
   const [missionMessage, setMissionMessage] = useState('')
   const [missionLoading, setMissionLoading] = useState(false)
+  const [benchmark, setBenchmark] = useState(null)
+  const [benchmarkLoading, setBenchmarkLoading] = useState(false)
+  const [benchmarkError, setBenchmarkError] = useState('')
+async function fetchBenchmark() {
+  setBenchmarkLoading(true)
+  setBenchmarkError('')
 
+  try {
+    const response = await fetch(
+      'http://localhost:8081/api/performance/benchmark'
+    )
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const data = await response.json()
+    setBenchmark(data)
+  } catch (error) {
+    setBenchmarkError(
+      error instanceof Error ? error.message : 'Unable to fetch benchmark'
+    )
+  } finally {
+    setBenchmarkLoading(false)
+  }
+}
+
+useEffect(() => {
+  fetchBenchmark()
+}, [])
   // Initialize Cesium and create all 60 drone markers.
   useEffect(() => {
     let cancelled = false
@@ -622,53 +651,77 @@ function App() {
       <p className="eyebrow">WEEK 3 / PERFORMANCE BENCHMARKS</p>
       <h2>Execution Performance</h2>
       <p className="performance-intro">
-        Compare Polyglot execution with a traditional mock REST call.
+        Live measurements from the GraalVM Python and Java benchmark endpoint.
       </p>
     </div>
 
-    <span className="demo-tag">SAMPLE DATA</span>
+    <button
+      type="button"
+      className="benchmark-refresh"
+      onClick={fetchBenchmark}
+      disabled={benchmarkLoading}
+    >
+      {benchmarkLoading ? 'Measuring...' : 'Refresh benchmark'}
+    </button>
   </div>
 
-  <div className="metrics-grid">
-    <MetricCard
-      title="Polyglot Execution"
-      value="8.4"
-      unit="ms"
-      icon="⚡"
-      description="Illustrative execution time"
-    />
+  {benchmarkError && (
+    <p className="benchmark-error" role="alert">
+      Benchmark unavailable: {benchmarkError}
+      {' '}Check that the backend is running on port 8081.
+    </p>
+  )}
 
-    <MetricCard
-      title="Mock REST Call"
-      value="24.7"
-      unit="ms"
-      icon="↗"
-      description="Illustrative request time"
-    />
+  {benchmarkLoading && !benchmark && (
+    <p role="status">Running the benchmark...</p>
+  )}
 
-    <MetricCard
-      title="Time Difference"
-      value="16.3"
-      unit="ms"
-      icon="◷"
-      description="Sample REST time minus Polyglot time"
-    />
+  {benchmark && (
+    <>
+      <div className="metrics-grid">
+        <MetricCard
+          title="Python Execution"
+          value={(benchmark.pythonExecutionMicros / 1000).toFixed(3)}
+          unit="ms"
+          icon="⚡"
+          description={benchmark.pythonOperation}
+        />
 
-    <MetricCard
-      title="Successful Executions"
-      value="12"
-      unit=""
-      icon="✓"
-      description="Illustrative count, not live executions"
-    />
-  </div>
+        <MetricCard
+          title="Java Baseline"
+          value={(benchmark.javaBaselineMicros / 1000).toFixed(3)}
+          unit="ms"
+          icon="⌁"
+          description="In-process Java computation"
+        />
 
-  <p className="benchmark-disclaimer" role="note">
-    Preview only — these values are examples, not measured results.
-    Real benchmark data will be connected on Day 2.
-  </p>
+        <MetricCard
+          title="Java Result"
+          value={benchmark.javaResult}
+          unit=""
+          icon="✓"
+          description="Expected result: 499500"
+        />
+
+        <MetricCard
+          title="Measurement Status"
+          value="Live"
+          unit=""
+          icon="◷"
+          description="Latest successful benchmark response"
+        />
+      </div>
+
+      <p className="benchmark-disclaimer" role="note">
+        Python and Java timings measure different execution paths.
+        The Java baseline is not an HTTP request. Python timing excludes
+        context creation and warm-up.
+      </p>
+    </>
+  )}
 </section>
-      <section className="mission-control">
+
+    <section className="mission-control">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">TEMPORAL WORKFLOW</p>
@@ -733,7 +786,7 @@ function App() {
           <div className="globe" ref={globeRef} />
 
           <p className="map-note">
-            Simulated GPS updates · Not connected to real drones
+            Simulated GPS updates Â· Not connected to real drones
           </p>
         </div>
 
@@ -760,7 +813,7 @@ function App() {
                 onClick={() => focusDrone(drone)}
               >
                 <div className="drone-card-top">
-                  <div className="drone-icon">✦</div>
+                  <div className="drone-icon">âœ¦</div>
 
                   <div className="drone-title">
                     <strong>{drone.name}</strong>
@@ -791,14 +844,14 @@ function App() {
                 </div>
 
                 <div className="coordinates">
-                  {drone.lat.toFixed(4)}°, {drone.lon.toFixed(4)}°
+                  {drone.lat.toFixed(4)}Â°, {drone.lon.toFixed(4)}Â°
                 </div>
               </button>
             ))}
           </div>
 
           <div className="workflow-note">
-            <span className="workflow-icon">↗</span>
+            <span className="workflow-icon">â†—</span>
             <div>
               <strong>Temporal workflows</strong>
               <p>
@@ -851,10 +904,10 @@ function App() {
         </div>
 
         <div className="editor-filebar">
-          <span className="file-indicator">●</span>
+          <span className="file-indicator">â—</span>
           <span>{currentLanguage.extension}</span>
           <span className="editor-status">
-            Editable · Local preview
+            Editable Â· Local preview
           </span>
         </div>
 
@@ -898,3 +951,4 @@ function App() {
 }
 
 export default App
+
