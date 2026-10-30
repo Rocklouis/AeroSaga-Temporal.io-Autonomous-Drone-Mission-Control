@@ -137,33 +137,41 @@ function App() {
   const [benchmark, setBenchmark] = useState(null)
   const [benchmarkLoading, setBenchmarkLoading] = useState(false)
   const [benchmarkError, setBenchmarkError] = useState('')
-async function fetchBenchmark() {
-  setBenchmarkLoading(true)
-  setBenchmarkError('')
 
-  try {
-    const response = await fetch(
-      'http://localhost:8081/api/performance/benchmark'
-    )
+  const [compensationWorkflowId, setCompensationWorkflowId] = useState(
+    'aerosaga-mission-faad212b-68d3-41fe-a229-8024a3b9bdb9'
+  )
+  const [compensationStatuses, setCompensationStatuses] = useState({})
+  const [compensationLoading, setCompensationLoading] = useState(false)
+  const [compensationMessage, setCompensationMessage] = useState('')
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+  async function fetchBenchmark() {
+    setBenchmarkLoading(true)
+    setBenchmarkError('')
+
+    try {
+      const response = await fetch(
+        'http://localhost:8081/api/performance/benchmark'
+      )
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+      setBenchmark(data)
+    } catch (error) {
+      setBenchmarkError(
+        error instanceof Error ? error.message : 'Unable to fetch benchmark'
+      )
+    } finally {
+      setBenchmarkLoading(false)
     }
-
-    const data = await response.json()
-    setBenchmark(data)
-  } catch (error) {
-    setBenchmarkError(
-      error instanceof Error ? error.message : 'Unable to fetch benchmark'
-    )
-  } finally {
-    setBenchmarkLoading(false)
   }
-}
 
-useEffect(() => {
-  fetchBenchmark()
-}, [])
+  useEffect(() => {
+    fetchBenchmark()
+  }, [])
   // Initialize Cesium and create all 60 drone markers.
   useEffect(() => {
     let cancelled = false
@@ -514,7 +522,72 @@ useEffect(() => {
       setMissionLoading(false)
     }
   }
+ async function fetchCompensationStatus() {
+  const id = compensationWorkflowId.trim()
 
+  if (!id) {
+    setCompensationMessage('Please enter a workflow ID.')
+    return
+  }
+
+  setCompensationLoading(true)
+  setCompensationMessage('Fetching compensation status...')
+  setCompensationStatuses({})
+
+  try {
+    const response = await fetch(
+      `http://localhost:8081/api/missions/${encodeURIComponent(id)}/status`
+    )
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const result = await response.json()
+
+    setCompensationStatuses(result.droneStatuses || {})
+    setCompensationMessage('Workflow status retrieved successfully.')
+  } catch (error) {
+    setCompensationMessage(
+      `Could not retrieve workflow status: ${error.message}`
+    )
+  } finally {
+    setCompensationLoading(false)
+  }
+}
+async function fetchCompensationStatus() {
+  const id = compensationWorkflowId.trim()
+
+  if (!id) {
+    setCompensationMessage('Please enter a workflow ID.')
+    return
+  }
+
+  setCompensationLoading(true)
+  setCompensationMessage('Fetching compensation status...')
+  setCompensationStatuses({})
+
+  try {
+    const response = await fetch(
+      `http://localhost:8081/api/missions/${encodeURIComponent(id)}/status`
+    )
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const result = await response.json()
+
+    setCompensationStatuses(result.droneStatuses || {})
+    setCompensationMessage('Workflow status retrieved successfully.')
+  } catch (error) {
+    setCompensationMessage(
+      `Could not retrieve workflow status: ${error.message}`
+    )
+  } finally {
+    setCompensationLoading(false)
+  }
+}
   // Poll the Temporal mission status endpoint.
   useEffect(() => {
     if (!workflowId) return
@@ -645,83 +718,83 @@ useEffect(() => {
           <strong>{String(returningCount).padStart(2, '0')}</strong>
         </article>
       </section>
+
 <section className="performance-panel">
   <div className="panel-heading">
     <div>
-      <p className="eyebrow">WEEK 3 / PERFORMANCE BENCHMARKS</p>
+      <p className="eyebrow">LIVE BACKEND MEASUREMENTS</p>
       <h2>Execution Performance</h2>
       <p className="performance-intro">
-        Live measurements from the GraalVM Python and Java benchmark endpoint.
+        GraalPy execution compared with an in-process Java computation.
       </p>
     </div>
 
-    <button
-      type="button"
-      className="benchmark-refresh"
-      onClick={fetchBenchmark}
-      disabled={benchmarkLoading}
-    >
-      {benchmarkLoading ? 'Measuring...' : 'Refresh benchmark'}
-    </button>
+    <span className="demo-tag">
+      {benchmark ? 'LIVE DATA' : 'AWAITING DATA'}
+    </span>
   </div>
 
+  {benchmarkLoading && (
+    <p>Loading benchmark results...</p>
+  )}
+
   {benchmarkError && (
-    <p className="benchmark-error" role="alert">
-      Benchmark unavailable: {benchmarkError}
-      {' '}Check that the backend is running on port 8081.
+    <p className="benchmark-disclaimer" role="alert">
+      Unable to load benchmark: {benchmarkError}
     </p>
   )}
 
-  {benchmarkLoading && !benchmark && (
-    <p role="status">Running the benchmark...</p>
-  )}
-
-  {benchmark && (
+  {!benchmarkLoading && !benchmarkError && benchmark && (
     <>
       <div className="metrics-grid">
         <MetricCard
           title="Python Execution"
-          value={(benchmark.pythonExecutionMicros / 1000).toFixed(3)}
+          value={(benchmark.pythonExecutionNanos / 1000000).toFixed(4)}
           unit="ms"
-          icon="⚡"
-          description={benchmark.pythonOperation}
+          icon="PY"
+          description="Measured GraalPy execution time"
         />
 
         <MetricCard
           title="Java Baseline"
-          value={(benchmark.javaBaselineMicros / 1000).toFixed(3)}
+          value={(benchmark.javaBaselineNanos / 1000000).toFixed(4)}
           unit="ms"
-          icon="⌁"
+          icon="JV"
           description="In-process Java computation"
         />
 
         <MetricCard
-          title="Java Result"
-          value={benchmark.javaResult}
+          title="Python Operation"
+          value={benchmark.pythonOperation}
           unit=""
-          icon="✓"
-          description="Expected result: 499500"
+          icon="OP"
+          description="Executed Python expression"
         />
 
         <MetricCard
-          title="Measurement Status"
-          value="Live"
+          title="Java Result"
+          value={String(benchmark.javaResult)}
           unit=""
-          icon="◷"
-          description="Latest successful benchmark response"
+          icon="OK"
+          description="Result of Java computation"
         />
       </div>
 
       <p className="benchmark-disclaimer" role="note">
-        Python and Java timings measure different execution paths.
-        The Java baseline is not an HTTP request. Python timing excludes
-        context creation and warm-up.
+        Measurements are from a small computation. They are not REST API
+        latency measurements or a general language performance comparison.
       </p>
     </>
   )}
+
+  {!benchmarkLoading && !benchmarkError && !benchmark && (
+    <p className="benchmark-disclaimer">
+      No benchmark results are currently available.
+    </p>
+  )}
 </section>
 
-    <section className="mission-control">
+      <section className="mission-control">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">TEMPORAL WORKFLOW</p>
@@ -951,4 +1024,3 @@ useEffect(() => {
 }
 
 export default App
-
