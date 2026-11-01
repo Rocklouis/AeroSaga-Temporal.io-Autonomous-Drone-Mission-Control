@@ -194,7 +194,8 @@ function App() {
           infoBox: false,
           selectionIndicator: false,
           terrainProvider,
-          requestRenderMode: false
+          requestRenderMode: true,
+          maximumRenderTimeChange: Infinity
         })
 
         if (cancelled) {
@@ -270,6 +271,7 @@ function App() {
     }
   }, [])
 
+  
   // Move every drone independently unless it has recent backend telemetry.
   useEffect(() => {
     const timer = setInterval(() => {
@@ -291,24 +293,16 @@ function App() {
 
           const lat = Math.max(
             -85,
-            Math.min(
-              85,
-              drone.lat + Math.sin(phase) * 0.006
-            )
+            Math.min(85, drone.lat + Math.sin(phase) * 0.006)
           )
 
           const lon = Math.max(
             -180,
-            Math.min(
-              180,
-              drone.lon + Math.cos(phase) * 0.006
-            )
+            Math.min(180, drone.lon + Math.cos(phase) * 0.006)
           )
 
           if (viewer && !viewer.isDestroyed()) {
-            const entity = viewer.entities.getById(
-              `drone-${drone.id}`
-            )
+            const entity = viewer.entities.getById(`drone-${drone.id}`)
 
             if (entity) {
               entity.position = Cartesian3.fromDegrees(
@@ -322,10 +316,16 @@ function App() {
           return { ...drone, lat, lon }
         })
       )
+
+      // Request one Cesium frame after updating the drone positions.
+      if (viewer && !viewer.isDestroyed()) {
+        viewer.scene.requestRender()
+      }
     }, 1000)
 
     return () => clearInterval(timer)
   }, [])
+
 
   // Connect to backend telemetry and reconnect when disconnected.
   useEffect(() => {
