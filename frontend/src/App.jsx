@@ -10,6 +10,7 @@ import {
 } from 'cesium'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import './App.css'
+import WorkflowEditor from './WorkflowEditor'
 
 const FLEET_SIZE = 60
 
@@ -939,7 +940,16 @@ async function fetchCompensationStatus() {
           </div>
         )}
       </section>
+            <section className="workflow-editor-section">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">MISSION DESIGN</p>
+            <h2>Visual Workflow Editor</h2>
+          </div>
+        </div>
 
+        <WorkflowEditor />
+      </section>
       <section className="workspace">
         <div className="map-panel">
           <div className="panel-heading">
