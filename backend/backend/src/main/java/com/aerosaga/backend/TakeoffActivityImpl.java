@@ -52,11 +52,11 @@ public class TakeoffActivityImpl implements TakeoffActivity {
     }
 
     @Override
-    public String returnToBase(String droneId) {
-        simulateDelay(droneId, "Return to Base");
+public String returnToBase(String droneId) {
+    simulateDelay(droneId, "Return to Base");
 
-        System.out.println("Drone " + droneId + " returned to base.");
-        return "COMPENSATION: Drone " + droneId
-                + " returned to base.";
-    }
+    System.out.println("Drone " + droneId + " returned to base.");
+    return "RETURNED_TO_BASE: Drone " + droneId
+            + " returned to base.";
+}
 }

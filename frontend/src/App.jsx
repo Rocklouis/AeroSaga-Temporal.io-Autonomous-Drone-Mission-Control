@@ -92,11 +92,24 @@ const languages = [
   { id: 'javascript', label: 'JavaScript', extension: 'main.js' }
 ]
 
-function getDroneColor(status) {
+function getStatusClass(status) {
+  const value = String(status || 'PENDING').toUpperCase();
+
+  if (value.includes('COMPLETED')) return 'status-completed';
+  if (value.includes('FAILED')) return 'status-failed';
+  if (value.includes('RUNNING') || value.includes('ACTIVE')) {
+    return 'status-running';
+  }
+  if (value.includes('CANCELED') || value.includes('TERMINATED')) {
+    return 'status-failed';
+  }
+
+  return 'status-pending';
+}
   if (status === 'Returning') return Color.ORANGE
   if (status === 'Ready') return Color.LIME
   return Color.CYAN
-}
+
 function MetricCard({ title, value, unit, description, icon }) {
   return (
     <article className="metric-card">
@@ -134,6 +147,9 @@ function App() {
   const [missionStatuses, setMissionStatuses] = useState({})
   const [missionMessage, setMissionMessage] = useState('')
   const [missionLoading, setMissionLoading] = useState(false)
+  const [workflowStatus, setWorkflowStatus] = useState('')
+  const [missionSteps, setMissionSteps] = useState({})
+  const [missionError, setMissionError] = useState('')
   const [benchmark, setBenchmark] = useState(null)
   const [benchmarkLoading, setBenchmarkLoading] = useState(false)
   const [benchmarkError, setBenchmarkError] = useState('')
@@ -488,10 +504,12 @@ function App() {
   // Start a mission through the existing backend API.
   async function startMission() {
     setMissionLoading(true)
-    setMissionMessage('Starting mission...')
-    setMissionStatuses({})
-    setWorkflowId('')
-
+setMissionMessage('Starting mission...')
+setMissionStatuses({})
+setMissionSteps({})
+setWorkflowStatus('')
+setMissionError('')
+setWorkflowId('')
     try {
       const response = await fetch(
         'http://localhost:8081/api/missions',
@@ -589,47 +607,79 @@ async function fetchCompensationStatus() {
   }
 }
   // Poll the Temporal mission status endpoint.
+  
+  // Poll Temporal workflow status and mission steps.
   useEffect(() => {
     if (!workflowId) return
 
     let cancelled = false
+    let timer
 
-    async function fetchMissionStatus() {
+    async function fetchMissionData() {
       try {
-        const response = await fetch(
-          `http://localhost:8081/api/missions/${encodeURIComponent(workflowId)}/status`
-        )
+        const baseUrl =
+          `http://localhost:8081/api/missions/${encodeURIComponent(workflowId)}`
 
-        if (!response.ok) {
+        const [statusResponse, stepsResponse] = await Promise.all([
+          fetch(`${baseUrl}/status`),
+          fetch(`${baseUrl}/steps`)
+        ])
+
+        if (!statusResponse.ok) {
           throw new Error(
-            `Status request failed: HTTP ${response.status}`
+            `Status request failed: HTTP ${statusResponse.status}`
           )
         }
 
-        const result = await response.json()
-
-        if (!cancelled) {
-          setMissionStatuses(result.droneStatuses || {})
-          setMissionMessage('Mission status updated.')
+        if (!stepsResponse.ok) {
+          throw new Error(
+            `Steps request failed: HTTP ${stepsResponse.status}`
+          )
         }
+
+        const [statusResult, stepsResult] = await Promise.all([
+          statusResponse.json(),
+          stepsResponse.json()
+        ])
+
+        if (cancelled) return
+
+        setWorkflowStatus(statusResult.workflowStatus || 'UNKNOWN')
+        setMissionStatuses(statusResult.droneStatuses || {})
+        setMissionSteps(stepsResult.missionSteps || {})
+        setMissionError('')
+        setMissionMessage('Mission data synchronized with Temporal.')
+
+        const terminalStatuses = [
+          'COMPLETED',
+          'FAILED',
+          'CANCELED',
+          'TERMINATED',
+          'TIMED_OUT'
+        ]
+
+        if (terminalStatuses.includes(statusResult.workflowStatus)) {
+          clearInterval(timer)
+        }
+
       } catch (error) {
         if (!cancelled) {
-          setMissionMessage(
-            `Mission started; status unavailable: ${error.message}`
-          )
+          setMissionError(error.message)
+          setMissionMessage('Could not synchronize mission data.')
         }
       }
     }
 
-    fetchMissionStatus()
+    fetchMissionData()
 
-    const timer = setInterval(fetchMissionStatus, 2000)
+    timer = setInterval(fetchMissionData, 2000)
 
     return () => {
       cancelled = true
       clearInterval(timer)
     }
   }, [workflowId])
+
 
   function focusDrone(drone) {
     setSelectedDrone(drone)
@@ -824,6 +874,49 @@ async function fetchCompensationStatus() {
             <code>{workflowId}</code>
           </p>
         )}
+        
+{workflowId && (
+  <div className="mission-status-list">
+    <h3>Temporal Workflow Status</h3>
+    <div className="mission-status-row">
+      <span>Execution Status</span>
+      <strong>{workflowStatus || 'Loading...'}</strong>
+    </div>
+  </div>
+)}
+
+{missionError && (
+  <p role="alert" className="error-message">
+    {missionError}
+  </p>
+)}
+
+{Object.keys(missionSteps).length > 0 && (
+  <div className="mission-status-list">
+    <h3>Mission Workflow DAG</h3>
+
+    {Object.entries(missionSteps).map(([droneId, steps]) => (
+      <div key={droneId} className="mission-status-row">
+        <h4>{droneId}</h4>
+
+        {[
+          'Takeoff',
+          'Navigate',
+          'Drop Package',
+          'Return to Base'
+        ].map(step => (
+          <div key={step} className="mission-status-row">
+            <span>{step}</span>
+            <strong className={`status-badge ${getStatusClass(steps[step])}`}>
+  {steps[step] || 'Pending'}
+</strong>
+            </strong>
+          </div>
+        ))}
+      </div>
+    ))}
+  </div>
+)}
 
         {Object.keys(missionStatuses).length > 0 && (
           <div className="mission-status-list">

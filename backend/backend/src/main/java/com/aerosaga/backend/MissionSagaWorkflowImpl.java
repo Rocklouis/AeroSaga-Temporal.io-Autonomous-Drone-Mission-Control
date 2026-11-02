@@ -37,6 +37,7 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
 
     @Override
     public List<String> launchMission(List<String> droneIds) {
+
         if (droneIds == null || droneIds.isEmpty()) {
             throw new IllegalArgumentException(
                     "At least one drone ID is required."
@@ -63,6 +64,7 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
 
         // Initialize mission steps for each drone.
         for (String droneId : droneIds) {
+
             droneStatuses.put(droneId, "TAKEOFF_REQUESTED");
 
             Map<String, String> steps = new LinkedHashMap<>();
@@ -75,9 +77,10 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
         }
 
         // Start all takeoff activities concurrently.
-        List<Promise<String>> promises = new ArrayList<>();
+        List<Promise<String>> takeoffPromises = new ArrayList<>();
 
         for (String droneId : droneIds) {
+
             setStepStatus(droneId, "Takeoff", "Active");
 
             Promise<String> promise = Async.function(
@@ -85,32 +88,36 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
                     droneId
             );
 
-            promises.add(promise);
+            takeoffPromises.add(promise);
         }
 
         try {
             Promise.allOf(
-                    promises.toArray(new Promise<?>[0])
+                    takeoffPromises.toArray(new Promise<?>[0])
             ).get();
         } catch (RuntimeException ignored) {
-            // Individual promise results are handled below.
+            // Individual takeoff results are handled below.
         }
 
         // Inspect each takeoff result.
         for (int i = 0; i < droneIds.size(); i++) {
+
             String droneId = droneIds.get(i);
 
             try {
-                String result = promises.get(i).get();
+                String result = takeoffPromises.get(i).get();
 
                 droneStatuses.put(droneId, "AIRBORNE");
                 setStepStatus(droneId, "Takeoff", "Completed");
+
                 successfullyLaunched.add(droneId);
                 results.add(result);
 
             } catch (RuntimeException exception) {
+
                 droneStatuses.put(droneId, "FAILED");
                 setStepStatus(droneId, "Takeoff", "Failed");
+
                 missionHasFailure = true;
 
                 results.add(
@@ -122,6 +129,7 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
 
         // If any takeoff fails, compensate successful takeoffs.
         if (missionHasFailure) {
+
             for (String droneId : successfullyLaunched) {
                 compensateReturnToBase(droneId, results);
             }
@@ -129,66 +137,97 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
             return results;
         }
 
-        // Execute the remaining mission steps for each drone.
+        // Execute remaining mission steps concurrently for all drones.
+        List<Promise<List<String>>> missionPromises = new ArrayList<>();
+
         for (String droneId : droneIds) {
-            try {
-                // Navigate to drop point.
-                droneStatuses.put(droneId, "NAVIGATING");
-                setStepStatus(droneId, "Navigate", "Active");
 
-                takeoffActivity.navigateToDropPoint(droneId);
+            Promise<List<String>> promise = Async.function(
+                    () -> executeRemainingMission(droneId)
+            );
 
-                setStepStatus(droneId, "Navigate", "Completed");
+            missionPromises.add(promise);
+        }
 
-                // Drop package.
-                droneStatuses.put(droneId, "DROPPING_PACKAGE");
-                setStepStatus(droneId, "Drop Package", "Active");
+        // Wait for all drone missions to finish.
+        Promise.allOf(
+                missionPromises.toArray(new Promise<?>[0])
+        ).get();
 
-                takeoffActivity.dropPackage(droneId);
-
-                setStepStatus(droneId, "Drop Package", "Completed");
-
-                // Return to base.
-                droneStatuses.put(droneId, "RETURNING_TO_BASE");
-                setStepStatus(droneId, "Return to Base", "Active");
-
-                String returnResult =
-                        takeoffActivity.returnToBase(droneId);
-
-                setStepStatus(droneId, "Return to Base", "Completed");
-                droneStatuses.put(droneId, "MISSION_COMPLETED");
-
-                results.add(
-                        "SUCCESS: Drone " + droneId
-                                + " completed delivery and returned to base."
-                );
-                results.add(returnResult);
-
-            } catch (RuntimeException exception) {
-                missionHasFailure = true;
-
-                String activeStep = getActiveStep(droneId);
-
-                if (activeStep != null) {
-                    setStepStatus(droneId, activeStep, "Failed");
-                }
-
-                results.add(
-                        "FAILED: Drone " + droneId
-                                + " mission failed at " + activeStep + "."
-                );
-
-                // Compensate failures during navigation or package drop.
-                if ("Navigate".equals(activeStep)
-                        || "Drop Package".equals(activeStep)) {
-                    compensateReturnToBase(droneId, results);
-                } else {
-                    droneStatuses.put(droneId, "FAILED");
-                }
-            }
+        // Collect results in the original drone order.
+        for (Promise<List<String>> promise : missionPromises) {
+            results.addAll(promise.get());
         }
 
         return results;
+    }
+
+    // Runs the remaining mission steps for one drone.
+    // Activities within this drone remain sequential.
+    private List<String> executeRemainingMission(String droneId) {
+
+        List<String> droneResults = new ArrayList<>();
+
+        try {
+
+            // Navigate to drop point.
+            droneStatuses.put(droneId, "NAVIGATING");
+            setStepStatus(droneId, "Navigate", "Active");
+
+            takeoffActivity.navigateToDropPoint(droneId);
+
+            setStepStatus(droneId, "Navigate", "Completed");
+
+            // Drop package.
+            droneStatuses.put(droneId, "DROPPING_PACKAGE");
+            setStepStatus(droneId, "Drop Package", "Active");
+
+            takeoffActivity.dropPackage(droneId);
+
+            setStepStatus(droneId, "Drop Package", "Completed");
+
+            // Return to base.
+            droneStatuses.put(droneId, "RETURNING_TO_BASE");
+            setStepStatus(droneId, "Return to Base", "Active");
+
+            String returnResult =
+                    takeoffActivity.returnToBase(droneId);
+
+            setStepStatus(droneId, "Return to Base", "Completed");
+            droneStatuses.put(droneId, "MISSION_COMPLETED");
+
+            droneResults.add(
+                    "SUCCESS: Drone " + droneId
+                            + " completed delivery and returned to base."
+            );
+
+            droneResults.add(returnResult);
+
+        } catch (RuntimeException exception) {
+
+            String activeStep = getActiveStep(droneId);
+
+            if (activeStep != null) {
+                setStepStatus(droneId, activeStep, "Failed");
+            }
+
+            droneResults.add(
+                    "FAILED: Drone " + droneId
+                            + " mission failed at " + activeStep + "."
+            );
+
+            // Compensate failures during navigation or package drop.
+            if ("Navigate".equals(activeStep)
+                    || "Drop Package".equals(activeStep)) {
+
+                compensateReturnToBase(droneId, droneResults);
+
+            } else {
+                droneStatuses.put(droneId, "FAILED");
+            }
+        }
+
+        return droneResults;
     }
 
     private void compensateReturnToBase(
@@ -199,15 +238,17 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
         setStepStatus(droneId, "Return to Base", "Active");
 
         try {
+
             String compensationResult =
                     takeoffActivity.returnToBase(droneId);
 
             droneStatuses.put(droneId, "RETURNED_TO_BASE");
             setStepStatus(droneId, "Return to Base", "Completed");
 
-            results.add(compensationResult);
+            results.add("COMPENSATION: " + compensationResult);
 
         } catch (RuntimeException exception) {
+
             droneStatuses.put(droneId, "COMPENSATION_FAILED");
             setStepStatus(droneId, "Return to Base", "Failed");
 
@@ -231,6 +272,7 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
     }
 
     private String getActiveStep(String droneId) {
+
         Map<String, String> steps = missionSteps.get(droneId);
 
         if (steps == null) {
@@ -238,6 +280,7 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
         }
 
         for (Map.Entry<String, String> entry : steps.entrySet()) {
+
             if ("Active".equals(entry.getValue())) {
                 return entry.getKey();
             }
@@ -253,11 +296,13 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
 
     @Override
     public Map<String, Map<String, String>> getMissionSteps() {
+
         Map<String, Map<String, String>> snapshot =
                 new LinkedHashMap<>();
 
         for (Map.Entry<String, Map<String, String>> entry
                 : missionSteps.entrySet()) {
+
             snapshot.put(
                     entry.getKey(),
                     new LinkedHashMap<>(entry.getValue())
