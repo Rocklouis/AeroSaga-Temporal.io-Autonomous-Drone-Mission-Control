@@ -92,23 +92,28 @@ const languages = [
   { id: 'javascript', label: 'JavaScript', extension: 'main.js' }
 ]
 
-function getStatusClass(status) {
-  const value = String(status || 'PENDING').toUpperCase();
-
-  if (value.includes('COMPLETED')) return 'status-completed';
-  if (value.includes('FAILED')) return 'status-failed';
-  if (value.includes('RUNNING') || value.includes('ACTIVE')) {
-    return 'status-running';
-  }
-  if (value.includes('CANCELED') || value.includes('TERMINATED')) {
-    return 'status-failed';
-  }
-
-  return 'status-pending';
-}
+function getDroneColor(status) {
   if (status === 'Returning') return Color.ORANGE
   if (status === 'Ready') return Color.LIME
   return Color.CYAN
+}
+
+function getStatusClass(status) {
+  const value = String(status || 'PENDING').toUpperCase()
+
+  if (value.includes('COMPLETED')) return 'status-completed'
+  if (value.includes('FAILED')) return 'status-failed'
+
+  if (value.includes('RUNNING') || value.includes('ACTIVE')) {
+    return 'status-running'
+  }
+
+  if (value.includes('CANCELED') || value.includes('TERMINATED')) {
+    return 'status-failed'
+  }
+
+  return 'status-pending'
+}
 
 function MetricCard({ title, value, unit, description, icon }) {
   return (
@@ -884,7 +889,11 @@ async function fetchCompensationStatus() {
     </div>
   </div>
 )}
-
+{missionLoading && (
+  <p className="mission-loading">
+    Starting mission. Please wait...
+  </p>
+)}
 {missionError && (
   <p role="alert" className="error-message">
     {missionError}
@@ -908,8 +917,7 @@ async function fetchCompensationStatus() {
           <div key={step} className="mission-status-row">
             <span>{step}</span>
             <strong className={`status-badge ${getStatusClass(steps[step])}`}>
-  {steps[step] || 'Pending'}
-</strong>
+              {steps[step] || 'Pending'}
             </strong>
           </div>
         ))}
