@@ -10,7 +10,7 @@ import {
 } from 'cesium'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import './App.css'
-import WorkflowEditor from './WorkflowEditor'
+
 
 const FLEET_SIZE = 60
 
@@ -156,6 +156,7 @@ function App() {
   const [workflowStatus, setWorkflowStatus] = useState('')
   const [missionSteps, setMissionSteps] = useState({})
   const [missionError, setMissionError] = useState('')
+  const [droneSearch, setDroneSearch] = useState('')
   const [benchmark, setBenchmark] = useState(null)
   const [benchmarkLoading, setBenchmarkLoading] = useState(false)
   const [benchmarkError, setBenchmarkError] = useState('')
@@ -732,7 +733,46 @@ async function fetchCompensationStatus() {
   const returningCount = drones.filter(
     drone => drone.status === 'Returning'
   ).length
+const droneStatusEntries = Object.entries(missionStatuses)
 
+const completedDrones = droneStatusEntries.filter(
+  ([, status]) => status === 'MISSION_COMPLETED'
+).length
+
+const failedDrones = droneStatusEntries.filter(
+  ([, status]) => String(status).includes('FAILED')
+).length
+
+const pendingDrones = droneStatusEntries.filter(
+  ([, status]) => String(status).includes('PENDING')
+).length
+
+const activeDrones = Math.max(
+  0,
+  droneStatusEntries.length -
+    completedDrones -
+    failedDrones -
+    pendingDrones
+)
+
+const totalSteps = Object.keys(missionSteps).length * 4
+
+const completedSteps = Object.values(missionSteps).reduce(
+  (total, steps) =>
+    total +
+    Object.values(steps).filter(status => status === 'Completed').length,
+  0
+)
+
+const missionProgress =
+  totalSteps > 0
+    ? Math.round((completedSteps / totalSteps) * 100)
+    : 0
+
+const filteredDrones = Object.entries(missionSteps).filter(
+  ([droneId]) =>
+    droneId.toLowerCase().includes(droneSearch.toLowerCase())
+)
   return (
     <main className="dashboard">
       <header className="topbar">
@@ -776,32 +816,49 @@ async function fetchCompensationStatus() {
       </section>
 
 <section className="performance-panel">
-  <div className="panel-heading">
+  <div className="panel-heading performance-heading">
     <div>
-      <p className="eyebrow">LIVE BACKEND MEASUREMENTS</p>
+      <p className="eyebrow">SYSTEM DIAGNOSTICS / BENCHMARK</p>
       <h2>Execution Performance</h2>
       <p className="performance-intro">
         GraalPy execution compared with an in-process Java computation.
       </p>
     </div>
 
-    <span className="demo-tag">
+    <span className={`demo-tag ${benchmark ? 'benchmark-live' : ''}`}>
+      <span className="status-dot" />
       {benchmark ? 'LIVE DATA' : 'AWAITING DATA'}
     </span>
   </div>
 
   {benchmarkLoading && (
-    <p>Loading benchmark results...</p>
+    <div className="benchmark-message">
+      <span className="loading-spinner" />
+      <p>Loading benchmark results...</p>
+    </div>
   )}
 
   {benchmarkError && (
-    <p className="benchmark-disclaimer" role="alert">
-      Unable to load benchmark: {benchmarkError}
-    </p>
+    <div className="benchmark-message benchmark-error" role="alert">
+      <strong>BENCHMARK UNAVAILABLE</strong>
+      <p>{benchmarkError}</p>
+    </div>
   )}
 
   {!benchmarkLoading && !benchmarkError && benchmark && (
     <>
+      <div className="benchmark-overview">
+        <div>
+          <span className="benchmark-label">BENCHMARK STATUS</span>
+          <strong>Execution test completed</strong>
+        </div>
+
+        <span className="benchmark-result-tag">
+          <span className="status-dot" />
+          DATA RECEIVED
+        </span>
+      </div>
+
       <div className="metrics-grid">
         <MetricCard
           title="Python Execution"
@@ -836,295 +893,476 @@ async function fetchCompensationStatus() {
         />
       </div>
 
-      <p className="benchmark-disclaimer" role="note">
-        Measurements are from a small computation. They are not REST API
-        latency measurements or a general language performance comparison.
-      </p>
+      <div className="benchmark-disclaimer" role="note">
+        <span className="disclaimer-icon">i</span>
+        <p>
+          Measurements are from a small computation. They are not REST API
+          latency measurements or a general language performance comparison.
+        </p>
+      </div>
     </>
   )}
 
   {!benchmarkLoading && !benchmarkError && !benchmark && (
-    <p className="benchmark-disclaimer">
-      No benchmark results are currently available.
-    </p>
+    <div className="benchmark-message">
+      <strong>NO BENCHMARK DATA</strong>
+      <p>No benchmark results are currently available.</p>
+    </div>
   )}
 </section>
 
       <section className="mission-control">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">TEMPORAL WORKFLOW</p>
-            <h2>Mission Control</h2>
-          </div>
+  <div className="panel-heading mission-heading">
+    <div>
+      <p className="eyebrow">TEMPORAL WORKFLOW / LIVE OPERATIONS</p>
+      <h2>Mission Control</h2>
+      <p className="mission-subtitle">
+        Monitor and manage autonomous drone missions
+      </p>
+    </div>
 
-          <button
-            type="button"
-            onClick={startMission}
-            disabled={missionLoading}
-          >
-            {missionLoading
-              ? 'Starting...'
-              : `Start ${drones.length}-Drone Mission`}
-          </button>
+    <button
+      type="button"
+      className="mission-start-button"
+      onClick={startMission}
+      disabled={missionLoading}
+    >
+      {missionLoading
+        ? 'Starting Mission...'
+        : `Start ${drones.length}-Drone Mission`}
+    </button>
+  </div>
+
+  {missionMessage && (
+    <p role="status" aria-live="polite" className="mission-message">
+      {missionMessage}
+    </p>
+  )}
+
+  {missionError && (
+    <p role="alert" className="error-message">
+      {missionError}
+    </p>
+  )}
+
+  {missionLoading && (
+    <p className="mission-loading">
+      Starting mission. Please wait...
+    </p>
+  )}
+
+  {workflowId ? (
+    <>
+      <div className="mission-overview">
+        <div className="mission-info-card">
+          <span className="mission-label">WORKFLOW ID</span>
+          <code>{workflowId}</code>
         </div>
 
-        {missionMessage && (
-          <p role="status" aria-live="polite">
-            {missionMessage}
-          </p>
-        )}
+        <div className="mission-info-card">
+          <span className="mission-label">EXECUTION STATUS</span>
+          <strong className={`status-badge ${getStatusClass(workflowStatus)}`}>
+            {workflowStatus || 'Loading...'}
+          </strong>
+        </div>
 
-        {workflowId && (
-          <p>
-            <strong>Workflow ID:</strong>{' '}
-            <code>{workflowId}</code>
-          </p>
-        )}
-        
-{workflowId && (
-  <div className="mission-status-list">
-    <h3>Temporal Workflow Status</h3>
-    <div className="mission-status-row">
-      <span>Execution Status</span>
-      <strong>{workflowStatus || 'Loading...'}</strong>
-    </div>
-  </div>
-)}
-{missionLoading && (
-  <p className="mission-loading">
-    Starting mission. Please wait...
-  </p>
-)}
-{missionError && (
-  <p role="alert" className="error-message">
-    {missionError}
-  </p>
-)}
-
-{Object.keys(missionSteps).length > 0 && (
-  <div className="mission-status-list">
-    <h3>Mission Workflow DAG</h3>
-
-    {Object.entries(missionSteps).map(([droneId, steps]) => (
-      <div key={droneId} className="mission-status-row">
-        <h4>{droneId}</h4>
-
-        {[
-          'Takeoff',
-          'Navigate',
-          'Drop Package',
-          'Return to Base'
-        ].map(step => (
-          <div key={step} className="mission-status-row">
-            <span>{step}</span>
-            <strong className={`status-badge ${getStatusClass(steps[step])}`}>
-              {steps[step] || 'Pending'}
-            </strong>
-          </div>
-        ))}
+        <div className="mission-info-card">
+          <span className="mission-label">ACTIVE DRONES</span>
+          <strong>{Object.keys(missionSteps).length}</strong>
+        </div>
       </div>
-    ))}
-  </div>
-)}
 
-        {Object.keys(missionStatuses).length > 0 && (
-          <div className="mission-status-list">
-            <h3>Drone mission statuses</h3>
+      {workflowId && (
+  <div className="mission-analytics">
+    <div className="mission-progress-heading">
+      <div>
+        <p className="eyebrow">OVERALL MISSION PROGRESS</p>
+        <h3>{missionProgress}% Completed</h3>
+      </div>
+      <span>{completedSteps} / {totalSteps} STEPS</span>
+    </div>
 
-            {Object.entries(missionStatuses).map(([droneId, status]) => (
-              <div key={droneId} className="mission-status-row">
-                <span>{droneId}</span>
-                <strong>{status}</strong>
+    <div className="mission-progress-track">
+      <div
+        className="mission-progress-fill"
+        style={{ width: `${missionProgress}%` }}
+      />
+    </div>
+
+    <div className="mission-counter-grid">
+      <div className="mission-counter">
+        <strong>{completedDrones}</strong>
+        <span>Completed</span>
+      </div>
+      <div className="mission-counter">
+        <strong>{activeDrones}</strong>
+        <span>Active</span>
+      </div>
+      <div className="mission-counter">
+        <strong>{failedDrones}</strong>
+        <span>Failed</span>
+      </div>
+      <div className="mission-counter">
+        <strong>{pendingDrones}</strong>
+        <span>Pending</span>
+      </div>
+    </div>
+
+    <div className="mission-section-heading">
+      <div>
+        <p className="eyebrow">FLEET EXECUTION</p>
+        <h3>Drone Workflows</h3>
+      </div>
+      <span className="fleet-count">
+        {Object.keys(missionSteps).length} DRONES
+      </span>
+    </div>
+
+    <input
+      type="search"
+      className="drone-search"
+      placeholder="Search drone ID..."
+      value={droneSearch}
+      onChange={event => setDroneSearch(event.target.value)}
+    />
+
+    <div className="compact-drone-list">
+      {filteredDrones.map(([droneId, steps]) => (
+        <details className="compact-drone-card" key={droneId}>
+          <summary>
+            <strong>{droneId}</strong>
+            <span>
+              {Object.values(steps).filter(
+                status => status === 'Completed'
+              ).length} / 4 steps
+            </span>
+            <span className="drone-expand">＋</span>
+          </summary>
+
+          <div className="compact-drone-steps">
+            {[
+              'Takeoff',
+              'Navigate',
+              'Drop Package',
+              'Return to Base'
+            ].map(step => (
+              <div className="compact-step-row" key={step}>
+                <span>{step}</span>
+                <strong className={`status-badge ${getStatusClass(steps[step])}`}>
+                  {steps[step] || 'Pending'}
+                </strong>
               </div>
             ))}
           </div>
-        )}
-      </section>
-            <section className="workflow-editor-section">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">MISSION DESIGN</p>
-            <h2>Visual Workflow Editor</h2>
-          </div>
-        </div>
+        </details>
+      ))}
 
-        <WorkflowEditor />
-      </section>
-      <section className="workspace">
-        <div className="map-panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">LIVE OPERATIONS / INDIA</p>
-              <h2>Fleet overview</h2>
+      {filteredDrones.length === 0 && (
+        <p className="mission-empty-message">No matching drones found.</p>
+      )}
+    </div>
+  </div>
+)}
+
+      
+    </>
+  ) : (
+    <div className="mission-empty-state">
+      <span className="mission-empty-icon">⌁</span>
+      <h3>No Active Mission</h3>
+      <p>
+        Start a drone mission to monitor workflow execution and
+        individual drone progress here.
+      </p>
+    </div>
+  )}
+</section>
+            
+      <section className="workspace fleet-workspace">
+  <div className="map-panel">
+    <div className="panel-heading">
+      <div>
+        <p className="eyebrow">AEROSAGA / LIVE OPERATIONS</p>
+        <h2>Fleet Command Map</h2>
+        <p className="map-subtitle">
+          Real-time simulated drone positioning and fleet monitoring
+        </p>
+      </div>
+
+      <span className="live-map-status">
+        <span className="live-dot" />
+        LIVE SIMULATION
+      </span>
+    </div>
+
+    <div className="map-toolbar">
+      <div className="map-toolbar-item">
+        <span className="map-indicator indicator-green" />
+        <span>Active Fleet</span>
+        <strong>{drones.length}</strong>
+      </div>
+
+      <div className="map-toolbar-item">
+        <span className="map-indicator indicator-cyan" />
+        <span>Selected Drone</span>
+        <strong>{selectedDrone?.id || 'None'}</strong>
+      </div>
+    </div>
+
+    {globeError && (
+      <p className="error-message">{globeError}</p>
+    )}
+
+    <div className="globe-container">
+      <div className="globe" ref={globeRef} />
+
+      <div className="map-overlay map-overlay-top">
+        <span>INDIA REGION</span>
+        <span>GPS TRACKING</span>
+      </div>
+
+      {selectedDrone && (
+  <div className="selected-drone-overlay">
+    <div className="telemetry-card-header">
+      <div>
+        <p className="eyebrow">LIVE TELEMETRY</p>
+        <strong>{selectedDrone.name}</strong>
+        <span>{selectedDrone.id}</span>
+      </div>
+
+      <span
+        className={`status ${
+          (selectedDrone.status || 'Unknown')
+            .toLowerCase()
+            .replace(' ', '-')
+        }`}
+      >
+        {selectedDrone.status || 'Unknown'}
+      </span>
+    </div>
+
+    <div className="telemetry-card-battery">
+      <div>
+        <span>Battery level</span>
+        <strong>{selectedDrone.battery}%</strong>
+      </div>
+
+      <div className="battery-track">
+        <div
+          className="battery-fill"
+          style={{ width: `${selectedDrone.battery}%` }}
+        />
+      </div>
+    </div>
+
+    <div className="telemetry-card-grid">
+      <div>
+        <span>LATITUDE</span>
+        <strong>{selectedDrone.lat.toFixed(4)}°</strong>
+      </div>
+
+      <div>
+        <span>LONGITUDE</span>
+        <strong>{selectedDrone.lon.toFixed(4)}°</strong>
+      </div>
+
+      <div>
+        <span>ALTITUDE</span>
+        <strong>
+          {selectedDrone.altitude ?? 120} m
+        </strong>
+      </div>
+
+      <div>
+        <span>CONNECTION</span>
+        <strong>
+          {selectedDrone.simulated ? 'SIMULATED' : 'TELEMETRY'}
+        </strong>
+      </div>
+    </div>
+  </div>
+)}
+    </div>
+
+    <div className="map-footer">
+      <span>SIMULATED GPS UPDATES</span>
+      <span>NOT CONNECTED TO REAL DRONES</span>
+    </div>
+  </div>
+
+  <aside className="fleet-panel">
+    <div className="panel-heading">
+      <div>
+        <p className="eyebrow">MISSION RESOURCES</p>
+        <h2>Drone Fleet</h2>
+      </div>
+
+      <span className="fleet-count">
+        {String(drones.length).padStart(2, '0')} UNITS
+      </span>
+    </div>
+
+    <div className="fleet-list-heading">
+      <span>AVAILABLE UNITS</span>
+      <span>{drones.length} TOTAL</span>
+    </div>
+
+    <div className="drone-list">
+      {drones.map(drone => (
+        <button
+          type="button"
+          className={`drone-card ${
+            selectedDrone?.id === drone.id ? 'selected' : ''
+          }`}
+          key={drone.id}
+          onClick={() => focusDrone(drone)}
+        >
+          <div className="drone-card-top">
+            <div className="drone-icon">✦</div>
+
+            <div className="drone-title">
+              <strong>{drone.name}</strong>
+              <span>{drone.id}</span>
             </div>
 
-            <span className="demo-tag">
-              {drones.length} DRONES
+            <span
+              className={`status ${
+                (drone.status || 'Unknown')
+                  .toLowerCase()
+                  .replace(' ', '-')
+              }`}
+            >
+              {drone.status || 'Unknown'}
             </span>
           </div>
 
-          {globeError && (
-            <p className="error-message">{globeError}</p>
-          )}
-
-          <div className="globe" ref={globeRef} />
-
-          <p className="map-note">
-            Simulated GPS updates Â· Not connected to real drones
-          </p>
-        </div>
-
-        <aside className="fleet-panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">MISSION RESOURCES</p>
-              <h2>Drone fleet</h2>
-            </div>
-
-            <span className="fleet-count">
-              {String(drones.length).padStart(2, '0')} UNITS
-            </span>
+          <div className="battery-row">
+            <span>Battery Level</span>
+            <strong>{drone.battery}%</strong>
           </div>
 
-          <div className="drone-list">
-            {drones.map(drone => (
-              <button
-                type="button"
-                className={`drone-card ${
-                  selectedDrone?.id === drone.id ? 'selected' : ''
-                }`}
-                key={drone.id}
-                onClick={() => focusDrone(drone)}
-              >
-                <div className="drone-card-top">
-                  <div className="drone-icon">âœ¦</div>
-
-                  <div className="drone-title">
-                    <strong>{drone.name}</strong>
-                    <span>{drone.id}</span>
-                  </div>
-
-                  <span
-                    className={`status ${
-                      (drone.status || 'Unknown')
-                        .toLowerCase()
-                        .replace(' ', '-')
-                    }`}
-                  >
-                    {drone.status || 'Unknown'}
-                  </span>
-                </div>
-
-                <div className="battery-row">
-                  <span>Battery</span>
-                  <strong>{drone.battery}%</strong>
-                </div>
-
-                <div className="battery-track">
-                  <div
-                    className="battery-fill"
-                    style={{ width: `${drone.battery}%` }}
-                  />
-                </div>
-
-                <div className="coordinates">
-                  {drone.lat.toFixed(4)}Â°, {drone.lon.toFixed(4)}Â°
-                </div>
-              </button>
-            ))}
+          <div className="battery-track">
+            <div
+              className="battery-fill"
+              style={{ width: `${drone.battery}%` }}
+            />
           </div>
 
-          <div className="workflow-note">
-            <span className="workflow-icon">â†—</span>
-            <div>
-              <strong>Temporal workflows</strong>
-              <p>
-                Simulated takeoff workflow implemented in the backend.
-              </p>
-            </div>
+          <div className="coordinates">
+            LAT {drone.lat.toFixed(4)}° &nbsp; LONG {drone.lon.toFixed(4)}°
           </div>
-        </aside>
-      </section>
+        </button>
+      ))}
+    </div>
+
+    <div className="workflow-note">
+      <span className="workflow-icon">↗</span>
+      <div>
+        <strong>Temporal Workflow Engine</strong>
+        <p>
+          Mission execution and recovery are managed by the Temporal backend.
+        </p>
+      </div>
+    </div>
+  </aside>
+</section>
 
       <section className="editor-panel">
-        <div className="panel-heading editor-heading">
-          <div>
-            <p className="eyebrow">DEVELOPMENT ENVIRONMENT</p>
-            <h2>Mission Code Workspace</h2>
-          </div>
+  <div className="panel-heading editor-heading">
+    <div>
+      <p className="eyebrow">AEROSAGA / DEVELOPER CONSOLE</p>
+      <h2>Mission Code Workspace</h2>
+      <p className="editor-subtitle">
+        Multi-language environment for mission development
+      </p>
+    </div>
 
-          <span className="demo-tag">EDITOR PREVIEW</span>
-        </div>
+    <span className="editor-live-tag">
+      <span className="live-dot connected" />
+      EDITOR READY
+    </span>
+  </div>
 
-        <div className="editor-toolbar">
-          <div
-            className="language-tabs"
-            role="tablist"
-            aria-label="Programming language"
-          >
-            {languages.map(language => (
-              <button
-                key={language.id}
-                type="button"
-                role="tab"
-                aria-selected={activeLanguage === language.id}
-                className={`language-tab ${
-                  activeLanguage === language.id ? 'active' : ''
-                }`}
-                onClick={() => setActiveLanguage(language.id)}
-              >
-                {language.label}
-              </button>
-            ))}
-          </div>
+  <div className="editor-toolbar">
+    <div
+      className="language-tabs"
+      role="tablist"
+      aria-label="Programming language"
+    >
+      {languages.map(language => (
+        <button
+          key={language.id}
+          type="button"
+          role="tab"
+          aria-selected={activeLanguage === language.id}
+          className={`language-tab ${
+            activeLanguage === language.id ? 'active' : ''
+          }`}
+          onClick={() => setActiveLanguage(language.id)}
+        >
+          {language.label}
+        </button>
+      ))}
+    </div>
 
-          <button
-            type="button"
-            className="reset-button"
-            onClick={resetCode}
-          >
-            Reset code
-          </button>
-        </div>
+    <button
+      type="button"
+      className="reset-button"
+      onClick={resetCode}
+    >
+      <span>↺</span> Reset Code
+    </button>
+  </div>
 
-        <div className="editor-filebar">
-          <span className="file-indicator">â—</span>
-          <span>{currentLanguage.extension}</span>
-          <span className="editor-status">
-            Editable Â· Local preview
-          </span>
-        </div>
+  <div className="editor-filebar">
+    <div className="editor-file-info">
+      <span className="file-indicator">●</span>
+      <strong>mission{currentLanguage.extension}</strong>
+    </div>
 
-        <div className="monaco-container">
-          <Editor
-            height="360px"
-            language={activeLanguage}
-            theme="vs-dark"
-            path={currentLanguage.extension}
-            value={codeByLanguage[activeLanguage]}
-            onChange={updateCode}
-            options={{
-              fontSize: 14,
-              fontFamily: "'DM Mono', monospace",
-              minimap: { enabled: false },
-              automaticLayout: true,
-              scrollBeyondLastLine: false,
-              padding: { top: 16 },
-              tabSize: 4,
-              wordWrap: 'on',
-              lineNumbers: 'on',
-              renderLineHighlight: 'all',
-              roundedSelection: true,
-              bracketPairColorization: { enabled: true }
-            }}
-          />
-        </div>
+    <span className="editor-status">
+      EDITABLE / LOCAL PREVIEW
+    </span>
+  </div>
 
-        <div className="editor-footer">
-          <span>{currentLanguage.label}</span>
-          <span>Code execution is not connected yet</span>
-        </div>
-      </section>
+  <div className="monaco-container">
+    <Editor
+      height="400px"
+      language={activeLanguage}
+      theme="vs-dark"
+      path={currentLanguage.extension}
+      value={codeByLanguage[activeLanguage]}
+      onChange={updateCode}
+      options={{
+        fontSize: 14,
+        fontFamily: "'DM Mono', monospace",
+        minimap: { enabled: false },
+        automaticLayout: true,
+        scrollBeyondLastLine: false,
+        padding: { top: 18 },
+        tabSize: 4,
+        wordWrap: 'on',
+        lineNumbers: 'on',
+        renderLineHighlight: 'all',
+        roundedSelection: true,
+        bracketPairColorization: { enabled: true },
+        cursorBlinking: 'smooth',
+        smoothScrolling: true,
+        suggestOnTriggerCharacters: true
+      }}
+    />
+  </div>
+
+  <div className="editor-footer">
+    <div>
+      <span className="editor-footer-dot" />
+      {currentLanguage.label}
+    </div>
+
+    <span>UTF-8</span>
+    <span>Execution not connected</span>
+  </div>
+</section>
 
       <footer>
         AEROSAGA / WEEK 2 TELEMETRY PROTOTYPE
