@@ -580,39 +580,7 @@ setWorkflowId('')
     setCompensationLoading(false)
   }
 }
-async function fetchCompensationStatus() {
-  const id = compensationWorkflowId.trim()
 
-  if (!id) {
-    setCompensationMessage('Please enter a workflow ID.')
-    return
-  }
-
-  setCompensationLoading(true)
-  setCompensationMessage('Fetching compensation status...')
-  setCompensationStatuses({})
-
-  try {
-    const response = await fetch(
-      `http://localhost:8081/api/missions/${encodeURIComponent(id)}/status`
-    )
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-
-    const result = await response.json()
-
-    setCompensationStatuses(result.droneStatuses || {})
-    setCompensationMessage('Workflow status retrieved successfully.')
-  } catch (error) {
-    setCompensationMessage(
-      `Could not retrieve workflow status: ${error.message}`
-    )
-  } finally {
-    setCompensationLoading(false)
-  }
-}
   // Poll the Temporal mission status endpoint.
   
   // Poll Temporal workflow status and mission steps.
@@ -776,44 +744,79 @@ const filteredDrones = Object.entries(missionSteps).filter(
   return (
     <main className="dashboard">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">AUTONOMOUS FLIGHT OPERATIONS</p>
-          <h1>
-            AeroSaga <span>Mission Control</span>
-          </h1>
-        </div>
+  <div className="brand-section">
+    <div className="brand-mark">
+      <span>AS</span>
+    </div>
 
-        <div className="connection">
-          <span
-            className={`live-dot ${
-              telemetryStatus === 'Connected' ? 'connected' : ''
-            }`}
-          />
-          TELEMETRY {telemetryStatus.toUpperCase()}
-        </div>
-      </header>
+    <div className="brand-info">
+      <p className="eyebrow">AUTONOMOUS FLIGHT OPERATIONS</p>
+      <h1>
+        AeroSaga <span>Mission Control</span>
+      </h1>
+      <p className="brand-description">
+        Real-time drone fleet orchestration and monitoring
+      </p>
+    </div>
+  </div>
 
-      <section className="summary">
-        <article className="summary-card">
-          <span>Total fleet</span>
-          <strong>{String(drones.length).padStart(2, '0')}</strong>
-        </article>
+  <div className="header-right">
+    <div className="system-status">
+      <span
+        className={`live-dot ${
+          telemetryStatus === 'Connected' ? 'connected' : ''
+        }`}
+      />
+      <div>
+        <span className="status-label">TELEMETRY LINK</span>
+        <strong>{telemetryStatus.toUpperCase()}</strong>
+      </div>
+    </div>
 
-        <article className="summary-card">
-          <span>In flight</span>
-          <strong>{String(inFlightCount).padStart(2, '0')}</strong>
-        </article>
+    <div className="system-time">
+      <span className="status-label">SYSTEM</span>
+      <strong>ONLINE</strong>
+    </div>
+  </div>
+</header>
 
-        <article className="summary-card">
-          <span>Ready</span>
-          <strong>{String(readyCount).padStart(2, '0')}</strong>
-        </article>
+<section className="summary">
+  <article className="summary-card">
+    <div className="summary-card-top">
+      <span className="summary-label">TOTAL FLEET</span>
+      <span className="summary-icon">◈</span>
+    </div>
+    <strong>{String(drones.length).padStart(2, '0')}</strong>
+    <span className="summary-caption">Registered drones</span>
+  </article>
 
-        <article className="summary-card">
-          <span>Returning</span>
-          <strong>{String(returningCount).padStart(2, '0')}</strong>
-        </article>
-      </section>
+  <article className="summary-card">
+    <div className="summary-card-top">
+      <span className="summary-label">IN FLIGHT</span>
+      <span className="summary-icon flight-icon">↗</span>
+    </div>
+    <strong>{String(inFlightCount).padStart(2, '0')}</strong>
+    <span className="summary-caption">Currently airborne</span>
+  </article>
+
+  <article className="summary-card">
+    <div className="summary-card-top">
+      <span className="summary-label">READY</span>
+      <span className="summary-icon ready-icon">✓</span>
+    </div>
+    <strong>{String(readyCount).padStart(2, '0')}</strong>
+    <span className="summary-caption">Available for missions</span>
+  </article>
+
+  <article className="summary-card">
+    <div className="summary-card-top">
+      <span className="summary-label">RETURNING</span>
+      <span className="summary-icon returning-icon">↙</span>
+    </div>
+    <strong>{String(returningCount).padStart(2, '0')}</strong>
+    <span className="summary-caption">Returning to base</span>
+  </article>
+</section>
 
 <section className="performance-panel">
   <div className="panel-heading performance-heading">

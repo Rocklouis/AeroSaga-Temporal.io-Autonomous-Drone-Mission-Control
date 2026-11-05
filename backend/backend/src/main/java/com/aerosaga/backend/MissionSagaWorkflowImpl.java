@@ -190,8 +190,7 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
             droneStatuses.put(droneId, "RETURNING_TO_BASE");
             setStepStatus(droneId, "Return to Base", "Active");
 
-            String returnResult =
-                    takeoffActivity.returnToBase(droneId);
+            String returnResult = returnDroneToHomeBase(droneId);
 
             setStepStatus(droneId, "Return to Base", "Completed");
             droneStatuses.put(droneId, "MISSION_COMPLETED");
@@ -239,8 +238,7 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
 
         try {
 
-            String compensationResult =
-                    takeoffActivity.returnToBase(droneId);
+            String compensationResult = returnDroneToHomeBase(droneId);
 
             droneStatuses.put(droneId, "RETURNED_TO_BASE");
             setStepStatus(droneId, "Return to Base", "Completed");
@@ -295,20 +293,39 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
     }
 
     @Override
-    public Map<String, Map<String, String>> getMissionSteps() {
+public Map<String, Map<String, String>> getMissionSteps() {
 
-        Map<String, Map<String, String>> snapshot =
-                new LinkedHashMap<>();
+    Map<String, Map<String, String>> snapshot =
+            new LinkedHashMap<>();
 
-        for (Map.Entry<String, Map<String, String>> entry
-                : missionSteps.entrySet()) {
+    for (Map.Entry<String, Map<String, String>> entry
+            : missionSteps.entrySet()) {
 
-            snapshot.put(
-                    entry.getKey(),
-                    new LinkedHashMap<>(entry.getValue())
-            );
-        }
-
-        return snapshot;
+        snapshot.put(
+                entry.getKey(),
+                new LinkedHashMap<>(entry.getValue())
+        );
     }
+
+    return snapshot;
 }
+
+private String returnDroneToHomeBase(String droneId) {
+
+    DroneAssignment assignment =
+            DroneFleetRegistry.getDrone(droneId);
+
+    // Keep compatibility with older test drone IDs.
+    if (assignment == null) {
+        return takeoffActivity.returnToBase(droneId);
+    }
+
+    return takeoffActivity.returnToAssignedBase(
+            droneId,
+            assignment.getBaseName(),
+            assignment.getBaseLatitude(),
+            assignment.getBaseLongitude()
+    );
+}
+}
+

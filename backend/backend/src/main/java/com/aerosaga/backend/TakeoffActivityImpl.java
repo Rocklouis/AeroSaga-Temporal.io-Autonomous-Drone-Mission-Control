@@ -59,4 +59,29 @@ public String returnToBase(String droneId) {
     return "RETURNED_TO_BASE: Drone " + droneId
             + " returned to base.";
 }
+
+@Override
+public String returnToAssignedBase(
+        String droneId,
+        String baseName,
+        double baseLatitude,
+        double baseLongitude) {
+
+    System.out.println(
+            "Drone " + droneId
+                    + " returning to assigned base: " + baseName
+                    + " (" + baseLatitude + ", " + baseLongitude + ")"
+    );
+
+    simulateDelay(droneId, "Return to Assigned Base");
+
+    System.out.println(
+            "Drone " + droneId
+                    + " reached its assigned base: " + baseName
+    );
+
+    return "RETURNED_TO_ASSIGNED_BASE: Drone " + droneId
+            + " returned to " + baseName;
+}
+
 }
