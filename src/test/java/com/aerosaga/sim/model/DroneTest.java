@@ -71,24 +71,39 @@ class DroneTest {
         assertNotEquals(MissionPhase.OFFLINE, d.getPhase());
     }
 
-@Test
-void compensation_lowBatteryForcesRtb() {
-    // Drain 50/tick so battery hits 0 quickly and forces compensation
-    Drone d = new Drone(
-            "DRONE-02", DroneType.HEAVY_CARGO,
-            19.0, 72.8,
-            20.0, 0.00008, 50, 120.0, 8.0, 0.0,
-            10, 15
-    );
-    d.assignMission(19.1, 72.9);
+    @Test
+    void compensation_lowBatteryForcesRtb() {
+        Drone d = new Drone(
+                "DRONE-02", DroneType.HEAVY_CARGO,
+                19.0, 72.8,
+                20.0, 0.00008, 50, 120.0, 8.0, 0.0,
+                10, 15
+        );
+        d.assignMission(19.1, 72.9);
+        d.tick();
+        d.tick();
+        assertEquals(MissionPhase.RETURN_TO_BASE, d.getPhase());
+    }
 
-    d.tick(); // battery 100 → 50, still TAKEOFF
-    d.tick(); // battery 50 → 0 → must enter RETURN_TO_BASE
+    @Test
+    void week3_failDropForcesRtbAndKeepsPayload() {
+        Drone d = heavy();
+        d.assignMission(19.05, 72.85);
+        for (int i = 0; i < 8; i++) d.tick();
+        d.failDrop();
+        assertEquals(MissionPhase.RETURN_TO_BASE, d.getPhase());
+        assertTrue(d.toState().isDropFailed());
+        assertFalse(d.toState().isAborted());
+        assertEquals(20.0, d.toState().getPayloadKg(), 0.01);
+    }
 
-    assertEquals(
-            MissionPhase.RETURN_TO_BASE,
-            d.getPhase(),
-            "low battery should force return-to-base compensation"
-    );
-}
+    @Test
+    void week4_abortForcesRtb() {
+        Drone d = heavy();
+        d.assignMission(19.05, 72.85);
+        for (int i = 0; i < 8; i++) d.tick();
+        d.abort();
+        assertEquals(MissionPhase.RETURN_TO_BASE, d.getPhase());
+        assertTrue(d.toState().isAborted());
+    }
 }
