@@ -1,11 +1,5 @@
 package com.aerosaga.sim.model;
 
-/**
- * Shared wire format for:
- *  - GET /api/sim/drones  (Frontend Week 1 static markers)
- *  - GET /api/sim/drones/{id}  (Temporal queries / activities)
- *  - POST gateway /api/telemetry/batch  (Backend → WebSocket → Cesium)
- */
 public class DroneState {
 
     private String droneId;
@@ -20,6 +14,8 @@ public class DroneState {
     private double payloadKg;
     private String droneType;
     private long timestamp;
+    private boolean dropFailed;
+    private boolean aborted;
 
     public DroneState() {}
 
@@ -58,4 +54,10 @@ public class DroneState {
 
     public long getTimestamp() { return timestamp; }
     public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
+
+    public boolean isDropFailed() { return dropFailed; }
+    public void setDropFailed(boolean dropFailed) { this.dropFailed = dropFailed; }
+
+    public boolean isAborted() { return aborted; }
+    public void setAborted(boolean aborted) { this.aborted = aborted; }
 }
