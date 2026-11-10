@@ -5,6 +5,7 @@ import com.aerosaga.sim.model.DroneState;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -18,8 +19,6 @@ public class SimController {
     public SimController(FleetEngine engine) {
         this.engine = engine;
     }
-
-    // ── Health / stats ──
 
     @GetMapping("/health")
     public Map<String, Object> health() {
@@ -35,8 +34,6 @@ public class SimController {
         return engine.stats();
     }
 
-    // ── Week 1: fleet snapshot for static Cesium markers ──
-
     @GetMapping("/drones")
     public List<DroneState> listDrones() {
         return engine.listAll();
@@ -47,14 +44,15 @@ public class SimController {
         return engine.get(droneId);
     }
 
-    // ── Week 1: Takeoff activity target ──
+    @GetMapping("/drones/{droneId}/steps")
+    public List<Map<String, String>> steps(@PathVariable String droneId) {
+        return missionSteps(engine.get(droneId));
+    }
 
     @PostMapping("/drones/{droneId}/takeoff")
     public DroneState takeoff(@PathVariable String droneId) {
         return engine.takeoff(droneId);
     }
-
-    // ── Week 2: full mission saga + multi-drone ──
 
     @PostMapping("/drones/{droneId}/mission")
     public DroneState mission(
@@ -69,12 +67,20 @@ public class SimController {
         return engine.rtb(droneId);
     }
 
+    @PostMapping("/drones/{droneId}/fail-drop")
+    public DroneState failDrop(@PathVariable String droneId) {
+        return engine.failDrop(droneId);
+    }
+
+    @PostMapping("/drones/{droneId}/abort")
+    public DroneState abort(@PathVariable String droneId) {
+        return engine.abort(droneId);
+    }
+
     @PostMapping("/missions/start-all")
     public List<DroneState> startAll() {
         return engine.startAllMissions();
     }
-
-    // ── Mid-review: resiliency / storm ──
 
     @PostMapping("/drones/{droneId}/offline")
     public DroneState offline(@PathVariable String droneId) {
@@ -89,5 +95,44 @@ public class SimController {
     @PostMapping("/chaos/storm")
     public List<DroneState> storm(@RequestParam(defaultValue = "5") int count) {
         return engine.storm(count);
+    }
+
+    private List<Map<String, String>> missionSteps(DroneState s) {
+        List<String> order = List.of(
+                "TAKEOFF", "NAVIGATE_TO_DROP", "DROP_PAYLOAD", "RETURN_TO_BASE", "LANDED"
+        );
+        String current = s.getPhase();
+        boolean compensating = s.isDropFailed() || s.isAborted();
+        int idx = order.indexOf(current);
+
+        List<Map<String, String>> out = new ArrayList<>();
+        for (int i = 0; i < order.size(); i++) {
+            String name = order.get(i);
+            String status;
+            if ("IDLE".equals(current)) {
+                status = "PENDING";
+            } else if ("OFFLINE".equals(current)) {
+                status = "BLOCKED";
+            } else if (idx < 0) {
+                status = "PENDING";
+            } else if (i < idx) {
+                status = "COMPLETED";
+            } else if (i == idx) {
+                status = compensating && "RETURN_TO_BASE".equals(name) ? "COMPENSATING" : "ACTIVE";
+            } else {
+                status = "PENDING";
+            }
+            if ("DROP_PAYLOAD".equals(name) && s.isDropFailed()) {
+                status = "FAILED";
+            }
+            if (s.isAborted()
+                    && !"RETURN_TO_BASE".equals(name)
+                    && !"LANDED".equals(name)
+                    && ("ACTIVE".equals(status) || "PENDING".equals(status))) {
+                status = "ABORTED";
+            }
+            out.add(Map.of("name", name, "status", status));
+        }
+        return out;
     }
 }
