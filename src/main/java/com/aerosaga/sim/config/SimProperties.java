@@ -1,16 +1,14 @@
 package com.aerosaga.sim.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
 
-@Component
 @ConfigurationProperties(prefix = "aerosaga.sim")
 public class SimProperties {
 
     private int fleetSize = 50;
     private long tickIntervalMs = 1000;
     private String gatewayUrl = "http://localhost:8080/api/telemetry/batch";
-    private boolean publishTelemetry = false;
+    private boolean publishTelemetry = false;  // default off for demos
     private double baseLat = 19.0760;
     private double baseLng = 72.8777;
     private double spread = 0.15;
@@ -27,7 +25,9 @@ public class SimProperties {
     public void setGatewayUrl(String gatewayUrl) { this.gatewayUrl = gatewayUrl; }
 
     public boolean isPublishTelemetry() { return publishTelemetry; }
-    public void setPublishTelemetry(boolean publishTelemetry) { this.publishTelemetry = publishTelemetry; }
+    public void setPublishTelemetry(boolean publishTelemetry) {
+        this.publishTelemetry = publishTelemetry;
+    }
 
     public double getBaseLat() { return baseLat; }
     public void setBaseLat(double baseLat) { this.baseLat = baseLat; }

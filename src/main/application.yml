@@ -15,7 +15,7 @@ aerosaga:
   sim:
     fleet-size: 50
     tick-interval-ms: 1000
-    # Backend gateway – change if teammate uses another path
+    # Backend gateway 
     gateway-url: http://localhost:8080/api/telemetry/batch
     publish-telemetry: false
     # Mumbai region box for Cesium
