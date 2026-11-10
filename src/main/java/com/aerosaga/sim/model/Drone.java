@@ -2,10 +2,6 @@ package com.aerosaga.sim.model;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * Single drone world object.
- * Thread-safety: all mutating ops are synchronized (tick loop + REST).
- */
 public class Drone {
 
     private final String droneId;
@@ -24,6 +20,8 @@ public class Drone {
     private int battery = 100;
     private double headingRad;
     private boolean payloadAttached = true;
+    private boolean dropFailed = false;
+    private boolean aborted = false;
 
     private final double homeLat;
     private final double homeLng;
@@ -67,14 +65,13 @@ public class Drone {
         this.alt = 0;
     }
 
-    // ── Commands (Temporal activities / demo curls call these via REST) ──
-
-    /** Week 1: takeoff command. */
     public synchronized void takeoff() {
         if (!online.get()) {
             return;
         }
         if (phase == MissionPhase.IDLE || phase == MissionPhase.LANDED) {
+            this.dropFailed = false;
+            this.aborted = false;
             this.targetLat = homeLat;
             this.targetLng = homeLng;
             this.payloadAttached = true;
@@ -82,11 +79,12 @@ public class Drone {
         }
     }
 
-    /** Week 2: full delivery mission. */
     public synchronized void assignMission(double dropLat, double dropLng) {
         if (!online.get()) {
             return;
         }
+        this.dropFailed = false;
+        this.aborted = false;
         this.targetLat = dropLat;
         this.targetLng = dropLng;
         this.payloadAttached = true;
@@ -105,7 +103,32 @@ public class Drone {
         }
     }
 
-    /** Mid-review: storm / link loss — freeze world state. */
+    /** Week 3: Drop activity failed → compensating RTB, payload not delivered. */
+    public synchronized void failDrop() {
+        if (!online.get()) {
+            return;
+        }
+        if (phase == MissionPhase.LANDED || phase == MissionPhase.IDLE) {
+            return;
+        }
+        this.dropFailed = true;
+        this.aborted = false;
+        this.payloadAttached = true;
+        this.phase = MissionPhase.RETURN_TO_BASE;
+    }
+
+    /** Week 4: Emergency abort (Temporal signal) → interrupt and RTB. */
+    public synchronized void abort() {
+        if (!online.get()) {
+            return;
+        }
+        if (phase == MissionPhase.LANDED || phase == MissionPhase.IDLE) {
+            return;
+        }
+        this.aborted = true;
+        this.phase = MissionPhase.RETURN_TO_BASE;
+    }
+
     public synchronized void goOffline() {
         if (!online.get()) {
             return;
@@ -115,14 +138,13 @@ public class Drone {
         online.set(false);
     }
 
-    /** Mid-review: reconnect — resume saga-compatible phase. */
     public synchronized void reconnect() {
         if (online.get()) {
             return;
         }
         online.set(true);
 
-        if (battery <= reconnectRtbThreshold) {
+        if (battery <= reconnectRtbThreshold || dropFailed || aborted) {
             phase = MissionPhase.RETURN_TO_BASE;
             return;
         }
@@ -131,18 +153,15 @@ public class Drone {
         if (resume == MissionPhase.OFFLINE || resume == null) {
             resume = MissionPhase.RETURN_TO_BASE;
         }
-        // DROP is instantaneous in sim; don't stick there after reconnect
         if (resume == MissionPhase.DROP_PAYLOAD) {
             resume = payloadAttached ? MissionPhase.NAVIGATE_TO_DROP : MissionPhase.RETURN_TO_BASE;
         }
         phase = resume;
     }
 
-    // ── Simulation tick ──
-
     public synchronized void tick() {
         if (!online.get()) {
-            return; // durable pause from the world's point of view
+            return;
         }
 
         if (battery <= lowBatteryThreshold
@@ -157,7 +176,7 @@ public class Drone {
             case NAVIGATE_TO_DROP -> doNavigateToDrop();
             case DROP_PAYLOAD -> doDrop();
             case RETURN_TO_BASE -> doReturnToBase();
-            default -> { /* IDLE / LANDED */ }
+            default -> { }
         }
 
         if (phase != MissionPhase.IDLE && phase != MissionPhase.LANDED) {
@@ -171,20 +190,15 @@ public class Drone {
     private void doTakeoff() {
         alt = Math.min(cruiseAltitudeM, alt + climbRateM);
         if (alt >= cruiseAltitudeM) {
-            // If target == home (takeoff-only), hover by going to navigate then immediately RTB-ready
-            if (near(targetLat, targetLng, cruiseStep * 2) && near(homeLat, homeLng, cruiseStep * 2)) {
-                // Week-1 takeoff with no drop: hold cruise at home
-                phase = MissionPhase.NAVIGATE_TO_DROP;
-            } else {
-                phase = MissionPhase.NAVIGATE_TO_DROP;
-            }
+            phase = MissionPhase.NAVIGATE_TO_DROP;
         }
     }
 
     private void doNavigateToDrop() {
-        // Takeoff-only with target at home: stay in cruise (frontend still sees motion of others)
-        if (near(targetLat, targetLng, cruiseStep * 1.5) && near(homeLat, homeLng, cruiseStep * 1.5)
-                && payloadAttached && Math.hypot(targetLat - homeLat, targetLng - homeLng) < 1e-8) {
+        if (near(targetLat, targetLng, cruiseStep * 1.5)
+                && near(homeLat, homeLng, cruiseStep * 1.5)
+                && payloadAttached
+                && Math.hypot(targetLat - homeLat, targetLng - homeLng) < 1e-8) {
             return;
         }
         stepToward(targetLat, targetLng, cruiseStep);
@@ -196,6 +210,11 @@ public class Drone {
     }
 
     private void doDrop() {
+        if (dropFailed) {
+            payloadAttached = true;
+            phase = MissionPhase.RETURN_TO_BASE;
+            return;
+        }
         payloadAttached = false;
         phase = MissionPhase.RETURN_TO_BASE;
     }
@@ -244,6 +263,8 @@ public class Drone {
         s.setPayloadKg(payloadAttached ? maxPayloadKg : 0.0);
         s.setDroneType(droneType.name());
         s.setTimestamp(System.currentTimeMillis());
+        s.setDropFailed(dropFailed);
+        s.setAborted(aborted);
         return s;
     }
 
