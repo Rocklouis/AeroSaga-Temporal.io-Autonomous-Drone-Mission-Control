@@ -42,7 +42,7 @@ public class FleetEngine {
         for (Drone d : FleetFactory.build(props)) {
             drones.put(d.getDroneId(), d);
         }
-        log.info("AeroSaga fleet ready: {} drones (DRONE-01 … DRONE-{})",
+        log.info("AeroSaga fleet ready: {} drones (DRONE-01 ... DRONE-{})",
                 drones.size(), String.format("%02d", props.getFleetSize()));
 
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -117,6 +117,20 @@ public class FleetEngine {
         return d.toState();
     }
 
+    public DroneState failDrop(String droneId) {
+        Drone d = require(droneId);
+        d.failDrop();
+        log.warn("{} DROP FAILED -> compensating RTB", droneId);
+        return d.toState();
+    }
+
+    public DroneState abort(String droneId) {
+        Drone d = require(droneId);
+        d.abort();
+        log.warn("{} ABORTED (emergency) -> RTB", droneId);
+        return d.toState();
+    }
+
     public DroneState offline(String droneId) {
         Drone d = require(droneId);
         d.goOffline();
@@ -131,7 +145,6 @@ public class FleetEngine {
         return d.toState();
     }
 
-    /** Week 2: start missions on all drones for Promise.allOf demos. */
     public List<DroneState> startAllMissions() {
         java.util.Random rng = new java.util.Random(99);
         List<DroneState> out = new ArrayList<>();
@@ -147,7 +160,6 @@ public class FleetEngine {
         return out;
     }
 
-    /** Mid-review chaos: take N drones offline. */
     public List<DroneState> storm(int count) {
         List<Drone> list = new ArrayList<>(drones.values());
         list.sort(Comparator.comparing(Drone::getDroneId));
@@ -174,7 +186,7 @@ public class FleetEngine {
     private Drone require(String droneId) {
         Drone d = drones.get(droneId);
         if (d == null) {
-            throw new NoSuchElementException("Unknown droneId: " + droneId + " (expected DRONE-01…DRONE-50)");
+            throw new NoSuchElementException("Unknown droneId: " + droneId + " (expected DRONE-01...DRONE-50)");
         }
         return d;
     }
