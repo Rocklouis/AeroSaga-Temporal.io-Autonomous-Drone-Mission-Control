@@ -4,6 +4,8 @@ package com.aerosaga.backend;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.client.WorkflowStub;
+import io.temporal.client.WorkflowQueryException;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -24,6 +26,7 @@ public class MissionController {
         this.workflowClient = workflowClient;
     }
 
+    // Start a new mission
     @PostMapping
     public Map<String, Object> startMission(
             @RequestBody List<String> droneIds) {
@@ -32,6 +35,14 @@ public class MissionController {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Provide at least one drone ID."
+            );
+        }
+
+        if (droneIds.stream().anyMatch(
+                id -> id == null || id.isBlank())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Drone IDs cannot be blank."
             );
         }
 
@@ -56,6 +67,7 @@ public class MissionController {
         );
     }
 
+    // Get current drone statuses
     @GetMapping("/{workflowId}/status")
     public Map<String, Object> getMissionStatus(
             @PathVariable String workflowId) {
@@ -75,7 +87,7 @@ public class MissionController {
                     "droneStatuses", statuses
             );
 
-        } catch (io.temporal.client.WorkflowQueryException queryError) {
+        } catch (WorkflowQueryException queryError) {
             try {
                 WorkflowStub stub = WorkflowStub.fromTyped(workflow);
                 List<?> results = stub.getResult(List.class);
@@ -87,37 +99,35 @@ public class MissionController {
                     String result = String.valueOf(item);
 
                     if (result.startsWith("SUCCESS: Drone ")
-                            && result.endsWith(" has taken off.")) {
+                            && result.contains("completed delivery")) {
 
-                        String droneId = result.substring(
-                                "SUCCESS: Drone ".length(),
-                                result.indexOf(" has taken off.")
-                        );
+                        String marker = "SUCCESS: Drone ";
+                        String ending =
+                                " completed delivery and returned to base.";
 
-                        statuses.put(droneId, "AIRBORNE");
+                        if (result.endsWith(ending)) {
+                            String droneId = result.substring(
+                                    marker.length(),
+                                    result.length() - ending.length()
+                            );
+                            statuses.put(droneId, "MISSION_COMPLETED");
+                        }
 
                     } else if (result.startsWith("FAILED: Drone ")
-                            && result.contains(" takeoff failed.")) {
+                            && result.contains("takeoff failed.")) {
 
-                        String droneId = result.substring(
-                                "FAILED: Drone ".length(),
-                                result.indexOf(" takeoff failed.")
-                        );
+                        String marker = "FAILED: Drone ";
+                        String ending = " takeoff failed.";
 
-                        statuses.put(droneId, "FAILED");
+                        int end = result.indexOf(ending);
+                        if (end > marker.length()) {
+                            String droneId = result.substring(
+                                    marker.length(), end
+                            );
+                            statuses.put(droneId, "FAILED");
+                        }
 
-                    } else if (result.startsWith("COMPENSATION: Drone ")
-                            && result.endsWith(" returned to base.")) {
-
-                        String droneId = result.substring(
-                                "COMPENSATION: Drone ".length(),
-                                result.indexOf(" returned to base.")
-                        );
-
-                        statuses.put(droneId, "RETURNED_TO_BASE");
-
-                    } else if (result.startsWith(
-                            "COMPENSATION FAILED: Drone ")) {
+                    } else if (result.startsWith("COMPENSATION FAILED: Drone ")) {
 
                         String marker = "COMPENSATION FAILED: Drone ";
                         String ending = " could not return to base.";
@@ -127,12 +137,32 @@ public class MissionController {
                                     marker.length(),
                                     result.length() - ending.length()
                             );
-
-                            statuses.put(
-                                    droneId,
-                                    "COMPENSATION_FAILED"
-                            );
+                            statuses.put(droneId, "COMPENSATION_FAILED");
                         }
+
+                    } else if (result.startsWith("COMPENSATION: Drone ")) {
+
+                        String marker = "COMPENSATION: Drone ";
+                        int end = result.indexOf(" returned to base");
+
+                        if (end > marker.length()) {
+                            String droneId = result.substring(
+                                    marker.length(), end
+                            );
+                            statuses.put(droneId, "RETURNED_TO_BASE");
+                        }
+
+                    } else if (result.startsWith("SUCCESS: Drone ")
+                            && result.endsWith(" has taken off.")) {
+
+                        String marker = "SUCCESS: Drone ";
+                        String ending = " has taken off.";
+
+                        String droneId = result.substring(
+                                marker.length(),
+                                result.length() - ending.length()
+                        );
+                        statuses.put(droneId, "AIRBORNE");
                     }
                 }
 
@@ -153,6 +183,36 @@ public class MissionController {
                         "Could not retrieve mission status or result."
                 );
             }
+        }
+    }
+
+    // Get mission DAG steps
+    @GetMapping("/{workflowId}/steps")
+    public Map<String, Object> getMissionSteps(
+            @PathVariable String workflowId) {
+
+        MissionSagaWorkflow workflow =
+                workflowClient.newWorkflowStub(
+                        MissionSagaWorkflow.class,
+                        workflowId
+                );
+
+        try {
+            Map<String, Map<String, String>> steps =
+                    workflow.getMissionSteps();
+
+            return Map.of(
+                    "workflowId", workflowId,
+                    "missionSteps", steps
+            );
+
+        } catch (WorkflowQueryException queryError) {
+            return Map.of(
+                    "workflowId", workflowId,
+                    "missionSteps", Map.of(),
+                    "message",
+                    "Workflow query unavailable; it may have completed."
+            );
         }
     }
 }

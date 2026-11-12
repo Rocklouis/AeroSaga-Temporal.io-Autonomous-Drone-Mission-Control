@@ -55,6 +55,36 @@ function App() {
   const [missionStatuses, setMissionStatuses] = useState({})
   const [missionMessage, setMissionMessage] = useState('')
   const [missionLoading, setMissionLoading] = useState(false)
+  const [benchmark, setBenchmark] = useState(null)
+  const [benchmarkLoading, setBenchmarkLoading] = useState(false)
+  const [benchmarkError, setBenchmarkError] = useState('')
+    async function fetchBenchmark() {
+    setBenchmarkLoading(true)
+    setBenchmarkError('')
+
+    try {
+      const response = await fetch(
+        'http://localhost:8081/api/performance/benchmark'
+      )
+
+      if (!response.ok) {
+        throw new Error(`Backend returned HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+      setBenchmark(data)
+    } catch (error) {
+      setBenchmarkError(
+        error instanceof Error ? error.message : 'Unable to fetch benchmark'
+      )
+    } finally {
+      setBenchmarkLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchBenchmark()
+  }, [])
 
 
   useEffect(() => {

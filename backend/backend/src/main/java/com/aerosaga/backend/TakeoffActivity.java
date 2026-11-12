@@ -11,5 +11,11 @@ public interface TakeoffActivity {
     String performTakeoff(String droneId);
 
     @ActivityMethod
+    String navigateToDropPoint(String droneId);
+
+    @ActivityMethod
+    String dropPackage(String droneId);
+
+    @ActivityMethod
     String returnToBase(String droneId);
 }
