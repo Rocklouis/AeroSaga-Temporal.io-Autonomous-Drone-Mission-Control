@@ -4,6 +4,8 @@ package com.aerosaga.backend;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.client.WorkflowStub;
+import io.temporal.client.WorkflowQueryException;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -24,6 +26,7 @@ public class MissionController {
         this.workflowClient = workflowClient;
     }
 
+    // Start a new drone mission
     @PostMapping
     public Map<String, Object> startMission(
             @RequestBody List<String> droneIds) {
@@ -32,6 +35,14 @@ public class MissionController {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Provide at least one drone ID."
+            );
+        }
+
+        if (droneIds.stream().anyMatch(
+                id -> id == null || id.isBlank())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Drone IDs cannot be blank."
             );
         }
 
@@ -56,6 +67,7 @@ public class MissionController {
         );
     }
 
+    // Get actual Temporal workflow status and individual drone statuses
     @GetMapping("/{workflowId}/status")
     public Map<String, Object> getMissionStatus(
             @PathVariable String workflowId) {
@@ -66,93 +78,77 @@ public class MissionController {
                         workflowId
                 );
 
+        WorkflowStub stub = WorkflowStub.fromTyped(workflow);
+
         try {
-            Map<String, String> statuses =
-                    workflow.getDroneStatuses();
+            String workflowStatus =
+                    stub.describe().getStatus().name();
+
+            workflowStatus = workflowStatus.replace(
+                    "WORKFLOW_EXECUTION_STATUS_", ""
+            );
+
+            Map<String, String> droneStatuses =
+                    new LinkedHashMap<>();
+
+            try {
+                droneStatuses.putAll(
+                        workflow.getDroneStatuses()
+                );
+            } catch (WorkflowQueryException queryError) {
+                System.out.println(
+                        "Drone status query unavailable for: "
+                                + workflowId
+                );
+            }
 
             return Map.of(
                     "workflowId", workflowId,
-                    "droneStatuses", statuses
+                    "workflowStatus", workflowStatus,
+                    "droneStatuses", droneStatuses
             );
 
-        } catch (io.temporal.client.WorkflowQueryException queryError) {
-            try {
-                WorkflowStub stub = WorkflowStub.fromTyped(workflow);
-                List<?> results = stub.getResult(List.class);
+        } catch (Exception e) {
+            System.err.println(
+                    "Failed to retrieve mission status: "
+                            + e.getClass().getName()
+                            + " - " + e.getMessage()
+            );
 
-                Map<String, String> statuses =
-                        new LinkedHashMap<>();
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Could not retrieve Temporal workflow status."
+            );
+        }
+    }
 
-                for (Object item : results) {
-                    String result = String.valueOf(item);
+    // Get individual mission DAG steps
+    @GetMapping("/{workflowId}/steps")
+    public Map<String, Object> getMissionSteps(
+            @PathVariable String workflowId) {
 
-                    if (result.startsWith("SUCCESS: Drone ")
-                            && result.endsWith(" has taken off.")) {
-
-                        String droneId = result.substring(
-                                "SUCCESS: Drone ".length(),
-                                result.indexOf(" has taken off.")
-                        );
-
-                        statuses.put(droneId, "AIRBORNE");
-
-                    } else if (result.startsWith("FAILED: Drone ")
-                            && result.contains(" takeoff failed.")) {
-
-                        String droneId = result.substring(
-                                "FAILED: Drone ".length(),
-                                result.indexOf(" takeoff failed.")
-                        );
-
-                        statuses.put(droneId, "FAILED");
-
-                    } else if (result.startsWith("COMPENSATION: Drone ")
-                            && result.endsWith(" returned to base.")) {
-
-                        String droneId = result.substring(
-                                "COMPENSATION: Drone ".length(),
-                                result.indexOf(" returned to base.")
-                        );
-
-                        statuses.put(droneId, "RETURNED_TO_BASE");
-
-                    } else if (result.startsWith(
-                            "COMPENSATION FAILED: Drone ")) {
-
-                        String marker = "COMPENSATION FAILED: Drone ";
-                        String ending = " could not return to base.";
-
-                        if (result.endsWith(ending)) {
-                            String droneId = result.substring(
-                                    marker.length(),
-                                    result.length() - ending.length()
-                            );
-
-                            statuses.put(
-                                    droneId,
-                                    "COMPENSATION_FAILED"
-                            );
-                        }
-                    }
-                }
-
-                return Map.of(
-                        "workflowId", workflowId,
-                        "droneStatuses", statuses
+        MissionSagaWorkflow workflow =
+                workflowClient.newWorkflowStub(
+                        MissionSagaWorkflow.class,
+                        workflowId
                 );
 
-            } catch (Exception e) {
-                System.err.println(
-                        "Failed to retrieve mission result: "
-                                + e.getClass().getName()
-                                + " - " + e.getMessage()
-                );
+        try {
+            Map<String, Map<String, String>> steps =
+                    workflow.getMissionSteps();
 
-                throw new ResponseStatusException(
-                        HttpStatus.INTERNAL_SERVER_ERROR,
-                        "Could not retrieve mission status or result."
-                );
-            }
+            return Map.of(
+                    "workflowId", workflowId,
+                    "missionSteps", steps
+            );
+
+        } catch (WorkflowQueryException queryError) {
+            return Map.of(
+                    "workflowId", workflowId,
+                    "missionSteps", Map.of(),
+                    "message",
+                    "Workflow query unavailable; it may have completed."
+            );
         }
     }
 }
