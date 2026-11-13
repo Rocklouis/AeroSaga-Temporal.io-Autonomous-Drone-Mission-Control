@@ -1,0 +1,29 @@
+
+server:
+  port: 8082
+
+spring:
+  application:
+    name: drone-simulator
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+aerosaga:
+  sim:
+    fleet-size: 50
+    tick-interval-ms: 1000
+    gateway-url: http://localhost:8080/api/telemetry/batch
+    publish-telemetry: false
+    base-lat: 19.0760
+    base-lng: 72.8777
+    spread: 0.15
+    low-battery-threshold: 10
+    reconnect-rtb-threshold: 15
+
+logging:
+  level:
+    com.aerosaga.sim: INFO
