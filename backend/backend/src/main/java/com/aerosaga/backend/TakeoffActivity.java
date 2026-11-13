@@ -18,4 +18,13 @@ public interface TakeoffActivity {
 
     @ActivityMethod
     String returnToBase(String droneId);
+
+    // New activity: return to the drone's assigned state-capital base.
+    @ActivityMethod
+    String returnToAssignedBase(
+            String droneId,
+            String baseName,
+            double baseLatitude,
+            double baseLongitude
+    );
 }

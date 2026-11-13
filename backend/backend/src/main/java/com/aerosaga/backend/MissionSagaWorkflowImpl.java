@@ -34,14 +34,9 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
     private final Map<String, Map<String, String>> missionSteps =
             new LinkedHashMap<>();
 
-    private static final String PENDING = "PENDING";
-    private static final String ACTIVE = "ACTIVE";
-    private static final String COMPLETED = "COMPLETED";
-    private static final String FAILED = "FAILED";
-    private static final String SKIPPED = "SKIPPED";
-
     @Override
     public List<String> launchMission(List<String> droneIds) {
+
         if (droneIds == null || droneIds.isEmpty()) {
             throw new IllegalArgumentException(
                     "At least one drone ID is required."
@@ -62,125 +57,238 @@ public class MissionSagaWorkflowImpl implements MissionSagaWorkflow {
             );
         }
 
-        List<Promise<String>> promises = new ArrayList<>();
+        List<String> results = new ArrayList<>();
+        List<String> successfullyLaunched = new ArrayList<>();
+        boolean missionHasFailure = false;
 
+        // Initialize mission steps for every drone.
         for (String droneId : droneIds) {
-            droneStatuses.put(droneId, "MISSION_PENDING");
+
+            droneStatuses.put(droneId, "TAKEOFF_REQUESTED");
 
             Map<String, String> steps = new LinkedHashMap<>();
-            steps.put("takeoff", PENDING);
-            steps.put("navigate", PENDING);
-            steps.put("dropPackage", PENDING);
-            steps.put("returnToBase", PENDING);
+            steps.put("Takeoff", "Pending");
+            steps.put("Navigate", "Pending");
+            steps.put("Drop Package", "Pending");
+            steps.put("Return to Base", "Pending");
 
             missionSteps.put(droneId, steps);
-            promises.add(
-                    Async.function(this::runDroneMission, droneId)
-            );
         }
 
-        List<String> results = new ArrayList<>();
+        // Start all takeoff activities concurrently.
+        List<Promise<String>> takeoffPromises = new ArrayList<>();
 
-        for (Promise<String> promise : promises) {
+        for (String droneId : droneIds) {
+
+            setStepStatus(droneId, "Takeoff", "Active");
+
+            Promise<String> promise = Async.function(
+                    takeoffActivity::performTakeoff,
+                    droneId
+            );
+
+            takeoffPromises.add(promise);
+        }
+
+        try {
+            Promise.allOf(
+                    takeoffPromises.toArray(new Promise<?>[0])
+            ).get();
+        } catch (RuntimeException ignored) {
+            // Individual takeoff results are checked below.
+        }
+
+        // Inspect each takeoff result.
+        for (int i = 0; i < droneIds.size(); i++) {
+
+            String droneId = droneIds.get(i);
+
             try {
-                results.add(promise.get());
+                String result = takeoffPromises.get(i).get();
+
+                droneStatuses.put(droneId, "AIRBORNE");
+                setStepStatus(droneId, "Takeoff", "Completed");
+
+                successfullyLaunched.add(droneId);
+                results.add(result);
+
             } catch (RuntimeException exception) {
-                results.add("MISSION_FAILED: " + exception.getMessage());
+
+                droneStatuses.put(droneId, "FAILED");
+                setStepStatus(droneId, "Takeoff", "Failed");
+
+                missionHasFailure = true;
+
+                results.add(
+                        "FAILED: Drone " + droneId
+                                + " takeoff failed."
+                );
             }
+        }
+
+        // If any takeoff fails, return successfully launched drones.
+        if (missionHasFailure) {
+
+            for (String droneId : successfullyLaunched) {
+                compensateReturnToBase(droneId, results);
+            }
+
+            return results;
+        }
+
+        // Execute the remaining mission concurrently across drones.
+        List<Promise<List<String>>> missionPromises = new ArrayList<>();
+
+        for (String droneId : droneIds) {
+
+            Promise<List<String>> promise = Async.function(
+                    () -> executeRemainingMission(droneId)
+            );
+
+            missionPromises.add(promise);
+        }
+
+        Promise.allOf(
+                missionPromises.toArray(new Promise<?>[0])
+        ).get();
+
+        // Collect results in the original drone order.
+        for (Promise<List<String>> promise : missionPromises) {
+            results.addAll(promise.get());
         }
 
         return results;
     }
 
-    private String runDroneMission(String droneId) {
-        Map<String, String> steps = missionSteps.get(droneId);
+    // Activities within one drone's mission remain sequential.
+    private List<String> executeRemainingMission(String droneId) {
+
+        List<String> droneResults = new ArrayList<>();
 
         try {
-            droneStatuses.put(droneId, "TAKING_OFF");
-            steps.put("takeoff", ACTIVE);
-            takeoffActivity.performTakeoff(droneId);
-            steps.put("takeoff", COMPLETED);
-            droneStatuses.put(droneId, "AIRBORNE");
 
-            // TEMPORARY: delay only the recovery-test drone
-if ("DR-RECOVERY-01".equals(droneId)) {
-    Workflow.sleep(Duration.ofMinutes(10));
-}
+            // Recovery testing: pause this drone for 10 minutes.
+            // Temporal Workflow.sleep is durable across worker restarts.
+            if ("DR-RECOVERY-01".equals(droneId)) {
+                Workflow.sleep(Duration.ofMinutes(10));
+            }
 
-        } catch (RuntimeException exception) {
-            steps.put("takeoff", FAILED);
-            steps.put("navigate", SKIPPED);
-            steps.put("dropPackage", SKIPPED);
-            steps.put("returnToBase", SKIPPED);
-            droneStatuses.put(droneId, "FAILED");
-            return "FAILED: Drone " + droneId + " takeoff failed.";
-        }
-
-        try {
+            // Navigate to the delivery point.
             droneStatuses.put(droneId, "NAVIGATING");
-            steps.put("navigate", ACTIVE);
+            setStepStatus(droneId, "Navigate", "Active");
+
             takeoffActivity.navigateToDropPoint(droneId);
-            steps.put("navigate", COMPLETED);
 
-        } catch (RuntimeException exception) {
-            steps.put("navigate", FAILED);
-            steps.put("dropPackage", SKIPPED);
-            return compensate(droneId, steps, "navigation");
-        }
+            setStepStatus(droneId, "Navigate", "Completed");
 
-        try {
+            // Drop the package.
             droneStatuses.put(droneId, "DROPPING_PACKAGE");
-            steps.put("dropPackage", ACTIVE);
+            setStepStatus(droneId, "Drop Package", "Active");
+
             takeoffActivity.dropPackage(droneId);
-            steps.put("dropPackage", COMPLETED);
 
-        } catch (RuntimeException exception) {
-            steps.put("dropPackage", FAILED);
-            return compensate(droneId, steps, "package drop");
-        }
+            setStepStatus(droneId, "Drop Package", "Completed");
 
-        try {
+            // Return to the assigned home base.
             droneStatuses.put(droneId, "RETURNING_TO_BASE");
-            steps.put("returnToBase", ACTIVE);
-            takeoffActivity.returnToBase(droneId);
-            steps.put("returnToBase", COMPLETED);
+            setStepStatus(droneId, "Return to Base", "Active");
+
+            String returnResult = returnDroneToHomeBase(droneId);
+
+            setStepStatus(droneId, "Return to Base", "Completed");
             droneStatuses.put(droneId, "MISSION_COMPLETED");
 
-            return "SUCCESS: Drone " + droneId
-                    + " completed delivery and returned to base.";
+            droneResults.add(
+                    "SUCCESS: Drone " + droneId
+                            + " completed delivery and returned to base."
+            );
+
+            droneResults.add(returnResult);
 
         } catch (RuntimeException exception) {
-            steps.put("returnToBase", FAILED);
-            droneStatuses.put(droneId, "COMPENSATION_FAILED");
 
-            return "COMPENSATION FAILED: Drone " + droneId
-                    + " could not return to base.";
+            String activeStep = getActiveStep(droneId);
+
+            if (activeStep != null) {
+                setStepStatus(droneId, activeStep, "Failed");
+            }
+
+            droneResults.add(
+                    "FAILED: Drone " + droneId
+                            + " mission failed at " + activeStep + "."
+            );
+
+            // Compensate navigation or package-drop failures.
+            if ("Navigate".equals(activeStep)
+                    || "Drop Package".equals(activeStep)) {
+
+                compensateReturnToBase(droneId, droneResults);
+
+            } else {
+                droneStatuses.put(droneId, "FAILED");
+            }
+        }
+
+        return droneResults;
+    }
+
+    // Compensation: return a drone to its assigned home base.
+    private void compensateReturnToBase(
+            String droneId,
+            List<String> results) {
+
+        droneStatuses.put(droneId, "RETURNING_TO_BASE");
+        setStepStatus(droneId, "Return to Base", "Active");
+
+        try {
+
+            String compensationResult = returnDroneToHomeBase(droneId);
+
+            droneStatuses.put(droneId, "RETURNED_TO_BASE");
+            setStepStatus(droneId, "Return to Base", "Completed");
+
+            results.add("COMPENSATION: " + compensationResult);
+
+        } catch (RuntimeException exception) {
+
+            droneStatuses.put(droneId, "COMPENSATION_FAILED");
+            setStepStatus(droneId, "Return to Base", "Failed");
+
+            results.add(
+                    "COMPENSATION FAILED: Drone " + droneId
+                            + " could not return to base."
+            );
         }
     }
 
-    private String compensate(
+    private void setStepStatus(
             String droneId,
-            Map<String, String> steps,
-            String failureReason
-    ) {
-        droneStatuses.put(droneId, "COMPENSATING");
-        steps.put("returnToBase", ACTIVE);
+            String step,
+            String status) {
 
-        try {
-            takeoffActivity.returnToBase(droneId);
-            steps.put("returnToBase", COMPLETED);
-            droneStatuses.put(droneId, "RETURNED_TO_BASE");
+        Map<String, String> steps = missionSteps.get(droneId);
 
-            return "COMPENSATION: Drone " + droneId
-                    + " returned to base after " + failureReason + " failure.";
-
-        } catch (RuntimeException exception) {
-            steps.put("returnToBase", FAILED);
-            droneStatuses.put(droneId, "COMPENSATION_FAILED");
-
-            return "COMPENSATION FAILED: Drone " + droneId
-                    + " could not return to base.";
+        if (steps != null) {
+            steps.put(step, status);
         }
+    }
+
+    private String getActiveStep(String droneId) {
+
+        Map<String, String> steps = missionSteps.get(droneId);
+
+        if (steps == null) {
+            return null;
+        }
+
+        for (Map.Entry<String, String> entry : steps.entrySet()) {
+
+            if ("Active".equals(entry.getValue())) {
+                return entry.getKey();
+            }
+        }
+
+        return null;
     }
 
     @Override
@@ -190,10 +298,13 @@ if ("DR-RECOVERY-01".equals(droneId)) {
 
     @Override
     public Map<String, Map<String, String>> getMissionSteps() {
-        Map<String, Map<String, String>> snapshot = new LinkedHashMap<>();
+
+        Map<String, Map<String, String>> snapshot =
+                new LinkedHashMap<>();
 
         for (Map.Entry<String, Map<String, String>> entry
                 : missionSteps.entrySet()) {
+
             snapshot.put(
                     entry.getKey(),
                     new LinkedHashMap<>(entry.getValue())
@@ -201,5 +312,23 @@ if ("DR-RECOVERY-01".equals(droneId)) {
         }
 
         return snapshot;
+    }
+
+    private String returnDroneToHomeBase(String droneId) {
+
+        DroneAssignment assignment =
+                DroneFleetRegistry.getDrone(droneId);
+
+        // Compatibility with older test drone IDs.
+        if (assignment == null) {
+            return takeoffActivity.returnToBase(droneId);
+        }
+
+        return takeoffActivity.returnToAssignedBase(
+                droneId,
+                assignment.getBaseName(),
+                assignment.getBaseLatitude(),
+                assignment.getBaseLongitude()
+        );
     }
 }

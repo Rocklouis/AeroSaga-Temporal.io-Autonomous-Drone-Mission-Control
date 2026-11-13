@@ -1,4 +1,3 @@
-
 package com.aerosaga.backend;
 
 import io.temporal.workflow.QueryMethod;
